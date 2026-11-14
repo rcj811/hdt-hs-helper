@@ -111,9 +111,12 @@ namespace HsHelper
 				// 啟動時把 HDT 主視窗縮小，並把爐石切到最前面，避免擋住遊戲
 				try
 				{
-					var main = ApiCore.MainWindow;
-					if(main != null && main.WindowState != System.Windows.WindowState.Minimized)
-						main.WindowState = System.Windows.WindowState.Minimized;
+					foreach(System.Windows.Window w in System.Windows.Application.Current.Windows)
+					{
+						// HDT 主視窗（類型名稱 MainWindow），不碰覆蓋層等其他視窗
+						if(w.GetType().Name == "MainWindow" && w.WindowState != System.Windows.WindowState.Minimized)
+							w.WindowState = System.Windows.WindowState.Minimized;
+					}
 				}
 				catch(Exception ex)
 				{
