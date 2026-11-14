@@ -274,6 +274,11 @@ namespace HsHelper.Bot
 		// ───────── 執行動作 ─────────
 		private void Execute(Snapshot s, BotAction a)
 		{
+			// 像真人一樣先「想一下」：每個動作前隨機等 0.5～2 秒
+			Status = "思考中…（" + a.Describe + "）";
+			Input.Pause(500, 2001);
+			Status = a.Describe;
+
 			switch(a.Type)
 			{
 				case ActionType.EndTurn:
