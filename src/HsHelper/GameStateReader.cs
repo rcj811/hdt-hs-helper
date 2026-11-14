@@ -56,14 +56,14 @@ namespace HsHelper
 			var me = game.Player;
 			var op = game.Opponent;
 
-			s.PlayerClass = me.CurrentClass;
+			s.PlayerClass = ClassName(me.CurrentClass);
 			s.PlayerHealth = HeroHealth(me.Hero);
 			s.PlayerHand = me.HandCount;
 			s.PlayerDeck = me.DeckCount;
 			s.TavernTier = me.Hero?.GetTag(GameTag.PLAYER_TECH_LEVEL) ?? 0;
 			s.PlayerBoard = Minions(me);
 
-			s.OpponentClass = op.CurrentClass;
+			s.OpponentClass = ClassName(op.CurrentClass);
 			s.OpponentName = op.Hero?.Card?.LocalizedName;
 			s.OpponentHealth = HeroHealth(op.Hero);
 			s.OpponentHand = op.HandCount;
@@ -71,6 +71,22 @@ namespace HsHelper
 			s.OpponentTavernTier = op.Hero?.GetTag(GameTag.PLAYER_TECH_LEVEL) ?? 0;
 			s.OpponentBoard = Minions(op);
 			return s;
+		}
+
+		private static readonly Dictionary<string, string> ClassNames = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
+		{
+			["Mage"] = "法師", ["Hunter"] = "獵人", ["Warrior"] = "戰士", ["Priest"] = "牧師",
+			["Rogue"] = "盜賊", ["Shaman"] = "薩滿", ["Warlock"] = "術士", ["Paladin"] = "聖騎士",
+			["Druid"] = "德魯伊", ["DemonHunter"] = "惡魔獵人", ["DeathKnight"] = "死亡騎士",
+			["Neutral"] = "中立"
+		};
+
+		private static string ClassName(string cls)
+		{
+			if(string.IsNullOrEmpty(cls))
+				return null;
+			var key = cls.Replace("_", "").Replace(" ", "");
+			return ClassNames.TryGetValue(key, out var zh) ? zh : cls;
 		}
 
 		private static int HeroHealth(Entity hero) =>

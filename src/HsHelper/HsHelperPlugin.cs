@@ -21,7 +21,7 @@ namespace HsHelper
 		public string Description => "即時顯示遊戲狀態（回合、手牌、牌庫、場面、戰場酒館等級）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 1, 0);
+		public Version Version => new Version(0, 1, 1);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -30,8 +30,10 @@ namespace HsHelper
 			{
 				_panel = new StatePanel();
 				ApiCore.OverlayCanvas.Children.Add(_panel);
+				// 放在左下方空白處，避開 HDT 左上角的對手記牌清單
 				Canvas.SetLeft(_panel, 12);
-				Canvas.SetTop(_panel, 160);
+				PositionPanel();
+				ApiCore.OverlayCanvas.SizeChanged += (s, e) => PositionPanel();
 
 				_menuItem = new MenuItem { Header = "爐石輔助：顯示／隱藏面板" };
 				_menuItem.Click += (s, e) => TogglePanel();
@@ -69,6 +71,14 @@ namespace HsHelper
 			{
 				Log.Error(ex);
 			}
+		}
+
+		private void PositionPanel()
+		{
+			if(_panel == null)
+				return;
+			var h = ApiCore.OverlayCanvas.ActualHeight;
+			Canvas.SetBottom(_panel, h > 0 ? h * 0.17 : 150);
 		}
 
 		private void TogglePanel()
