@@ -16,7 +16,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Fetch HDT reference assemblies (official release)
         env:
@@ -35,7 +35,7 @@ jobs:
 
       - name: Get Traditional Chinese language file for Inno Setup
         run: |
-          Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseTraditional.isl" -OutFile installer/ChineseTraditional.isl
+          Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/ChineseTraditional.isl" -OutFile installer/ChineseTraditional.isl
 
       - name: Ensure Inno Setup
         run: |
