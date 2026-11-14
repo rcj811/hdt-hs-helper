@@ -1,0 +1,47 @@
+起點適應度 160
+世代 1：適應度 160，σ=0.21
+世代 2：適應度 161，σ=0.26
+世代 3：適應度 165，σ=0.31
+世代 4：適應度 165，σ=0.26
+世代 5：適應度 165，σ=0.22
+世代 6：適應度 166，σ=0.27
+世代 7：適應度 166，σ=0.23
+世代 8：適應度 166，σ=0.19
+世代 9：適應度 166，σ=0.16
+世代 10：適應度 166，σ=0.14
+世代 11：適應度 166，σ=0.12
+世代 12：適應度 168，σ=0.14
+世代 13：適應度 168，σ=0.12
+世代 14：適應度 168，σ=0.10
+世代 15：適應度 169，σ=0.12
+世代 16：適應度 169，σ=0.10
+世代 17：適應度 169，σ=0.09
+世代 18：適應度 169，σ=0.08
+世代 19：適應度 170，σ=0.09
+世代 20：適應度 170，σ=0.08
+世代 21：適應度 170，σ=0.07
+世代 22：適應度 170，σ=0.06
+世代 23：適應度 170，σ=0.05
+世代 24：適應度 170，σ=0.05
+世代 25：適應度 171，σ=0.06
+驗證（新種子）：預設權重 273，調整後 280
+最佳權重：
+		public double HeroHp = 1.195;
+		public double LowHpPenalty = 1.897;
+		public double LowHpLine = 8.118;
+		public double OppHp = 0.948;
+		public double OppLowBonus = 3.533;
+		public double OppLowLine = 9.869;
+		public double MyMinionBase = 4.817;
+		public double MyMinionAtk = 2.195;
+		public double MyMinionHp = 2.001;
+		public double OppMinionBase = 4.267;
+		public double OppMinionAtk = 2.082;
+		public double OppMinionHp = 1.243;
+		public double OppAtk4 = 9.338;
+		public double OppTaunt = 3.593;
+		public double HandCard = 5.579;
+		public double ManaLeft = 4.149;
+		public double LethalRisk = 353.709;
+		public double AggroFace = 2.077;
+		public double EnemyTurnBlend = 0.457;

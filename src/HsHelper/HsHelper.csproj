@@ -5,7 +5,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>HsHelper</AssemblyName>
     <RootNamespace>HsHelper</RootNamespace>
-    <Version>0.3.2</Version>
+    <Version>0.4.0</Version>
     <PlatformTarget>x64</PlatformTarget>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- HDT 的參考檔由 scripts/fetch-hdt-refs.ps1 從官方發行版下載到這裡，不放進 repo -->
@@ -16,6 +16,7 @@
     <Reference Include="PresentationFramework" />
     <Reference Include="WindowsBase" />
     <Reference Include="System.Xaml" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="HearthstoneDeckTracker">
       <HintPath>$(HdtRefDir)HearthstoneDeckTracker.exe</HintPath>
       <Private>False</Private>
@@ -24,6 +25,10 @@
       <HintPath>$(HdtRefDir)HearthDb.dll</HintPath>
       <Private>False</Private>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 模擬器產生的初始學習資料，內建在 DLL 裡，第一次啟動時自動匯入 -->
+    <EmbeddedResource Include="Resources\learning-seed.json" LogicalName="HsHelper.learning-seed.json" Condition="Exists('Resources\learning-seed.json')" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />

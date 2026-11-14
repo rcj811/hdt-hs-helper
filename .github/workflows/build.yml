@@ -24,6 +24,8 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: 決策 AI 模擬測試（失敗就不產出安裝檔）
+        env:
+          HSHELPER_SEED: src/HsHelper/Resources/learning-seed.json
         run: |
           dotnet run --project tests/HsHelper.Tests -c Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

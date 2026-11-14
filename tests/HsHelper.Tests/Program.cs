@@ -19,14 +19,32 @@ namespace HsHelper.Tests
 		private static int _pass, _fail;
 		private static readonly List<string> Report = new List<string>();
 
-		public static int Main()
+		public static int Main(string[] args)
 		{
+			if(args.Length > 0 && args[0] == "--tune")
+			{
+				Tuner.Run(args.Length > 1 ? int.Parse(args[1]) : 30);
+				return 0;
+			}
+			if(args.Length > 0 && args[0] == "--exp")
+			{
+				LearningTests.Experiment(args.Length > 1 ? int.Parse(args[1]) : 300);
+				return 0;
+			}
+			if(args.Length > 1 && args[0] == "--seed")
+			{
+				LearningTests.GenerateSeed(args[1], args.Length > 2 ? int.Parse(args[2]) : 80);
+				return 0;
+			}
+			var seedPath = Environment.GetEnvironmentVariable("HSHELPER_SEED") ?? "../../src/HsHelper/Resources/learning-seed.json";
 			Section("A. 情境測試");
 			Scenarios();
 			Section("B. 隨機局面壓力測試");
 			Fuzz(400);
-			Section("C. 模擬對戰（AI vs 只會打臉的對手）");
+			Section("C. 模擬對戰");
 			SelfPlay(200);
+			Section("D. 學習功能（匯入匯出、從對局學習）");
+			LearningTests.Run(seedPath);
 
 			var summary = $"結果：{_pass} 通過，{_fail} 失敗";
 			Console.WriteLine();
@@ -47,7 +65,7 @@ namespace HsHelper.Tests
 			Report.Add("### " + title);
 		}
 
-		private static void Check(string name, bool ok, string detail = "")
+		public static void Check(string name, bool ok, string detail = "")
 		{
 			if(ok) _pass++; else _fail++;
 			var line = $"{(ok ? "✅" : "❌")} {name}{(string.IsNullOrEmpty(detail) ? "" : "：" + detail)}";
@@ -310,26 +328,38 @@ namespace HsHelper.Tests
 		}
 
 		// ───────── C. 模擬對戰 ─────────
-		private class Side
+		public delegate BotAction Policy(Snapshot s, ISet<int> skip);
+
+		public class Side
 		{
 			public int Hp = 30, MaxMana, Mana, Fatigue;
 			public bool HeroPowerUsed;
 			public List<Ent> Deck = new List<Ent>(), Hand = new List<Ent>(), Board = new List<Ent>();
 			public Ent Hero, Power;
+			public int FaceDamageTaken, AoeEvents, MaxBurst, TurnsTaken; // 給學習功能用的統計（被對手打的）
 		}
 
-		private static List<Ent> RandomDeck(Random r)
+		// 牌組規格：同一副牌可以產生兩份給雙方（鏡像對戰）
+		public class CardSpec { public char Type; public int Cost, Atk, Hp; public bool Charge, Taunt; public string Text, Name; }
+
+		public static List<CardSpec> RandomDeckSpec(Random r, double aoeRate = 0.1, double burnRate = 0.1, double chargeRate = 1.0 / 12)
 		{
-			var deck = new List<Ent>();
+			var deck = new List<CardSpec>();
 			for(var i = 0; i < 30; i++)
 			{
-				var k = r.Next(10);
-				if(k == 0) { deck.Add(Spell(r.Next(1, 4), "Deal 3 damage.", "火球")); continue; }
-				if(k == 1) { deck.Add(Spell(4, "Deal 2 damage to all enemy minions.", "爆炸")); continue; }
+				var x = r.NextDouble();
+				if(x < burnRate) { deck.Add(new CardSpec { Type = 'S', Cost = r.Next(1, 4), Text = "Deal 3 damage.", Name = "火球" }); continue; }
+				if(x < burnRate + aoeRate) { deck.Add(new CardSpec { Type = 'S', Cost = 4, Text = "Deal 2 damage to all enemy minions.", Name = "爆炸" }); continue; }
 				var c = new[] { 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6, 7 }[r.Next(14)];
-				deck.Add(Card(c, Math.Max(1, c + r.Next(-1, 2)), Math.Max(1, c + r.Next(0, 2)), charge: r.Next(12) == 0, taunt: r.Next(5) == 0));
+				deck.Add(new CardSpec { Type = 'M', Cost = c, Atk = Math.Max(1, c + r.Next(-1, 2)), Hp = Math.Max(1, c + r.Next(0, 2)), Charge = r.NextDouble() < chargeRate, Taunt = r.Next(5) == 0 });
 			}
 			return deck;
+		}
+
+		private static List<Ent> Instantiate(List<CardSpec> spec, Random shuffle)
+		{
+			var list = spec.Select(c => c.Type == 'S' ? Spell(c.Cost, c.Text, c.Name) : Card(c.Cost, c.Atk, c.Hp, charge: c.Charge, taunt: c.Taunt)).ToList();
+			return list.OrderBy(_ => shuffle.Next()).ToList();
 		}
 
 		private static void Draw(Side s)
@@ -340,43 +370,117 @@ namespace HsHelper.Tests
 			if(s.Hand.Count < 10) s.Hand.Add(c);
 		}
 
+		public static BotAction NewAi(Snapshot s, ISet<int> skip) => Search.BestFirstAction(s, skip, out _);
+		public static BotAction OldAi(Snapshot s, ISet<int> skip) => HsHelper.Baseline.SearchV03.BestFirstAction(s, skip, out _);
+
+		/// <summary>只會打臉：高費先出、能打臉就打臉（有嘲諷才打嘲諷）。</summary>
+		public static BotAction FaceBot(Snapshot s, ISet<int> skip) => SimpleBot(s, skip, false);
+		/// <summary>會交換：能「殺掉又活著」就交換，其餘打臉。</summary>
+		public static BotAction TraderBot(Snapshot s, ISet<int> skip) => SimpleBot(s, skip, true);
+
+		private static BotAction SimpleBot(Snapshot s, ISet<int> skip, bool trade)
+		{
+			var coin = s.Hand.FirstOrDefault(c => c.IsCoin);
+			if(coin != null && s.Hand.Any(c => !c.IsCoin && c.Cost == s.Mana + 1))
+				return new BotAction { Type = ActionType.Play, Source = coin };
+			var card = s.Hand.Where(c => !c.IsCoin && !skip.Contains(c.Id) && c.Cost <= s.Mana && (c.Kind != Kind.Minion || s.MyBoard.Count < 7))
+				.OrderByDescending(c => c.Cost).FirstOrDefault();
+			if(card != null)
+			{
+				Ent target = null;
+				if(card.Kind == Kind.Spell && card.Target != TargetKind.None)
+					target = trade
+						? s.OppBoard.Where(m => m.Hp <= card.Damage).OrderByDescending(m => m.Atk).FirstOrDefault() ?? s.OppHero
+						: s.OppBoard.OrderByDescending(m => m.Atk).FirstOrDefault() ?? s.OppHero;
+				return new BotAction { Type = ActionType.Play, Source = card, Target = target };
+			}
+			if(s.MyHeroPower != null && s.Mana >= s.MyHeroPower.Cost)
+				return new BotAction { Type = ActionType.HeroPower, Source = s.MyHeroPower };
+			var attacker = s.MyBoard.FirstOrDefault(m => !skip.Contains(m.Id) && m.Atk > 0 && (!m.Exhausted || m.Charge) && m.AttacksThisTurn == 0);
+			if(attacker != null)
+			{
+				var taunt = s.OppBoard.FirstOrDefault(x => x.Taunt);
+				Ent target = taunt ?? s.OppHero;
+				if(taunt == null && trade)
+					target = s.OppBoard.Where(d => attacker.Atk >= d.Hp && attacker.Hp > d.Atk).OrderByDescending(d => d.Atk).FirstOrDefault() ?? s.OppHero;
+				return new BotAction { Type = ActionType.Attack, Source = attacker, Target = target };
+			}
+			return null;
+		}
+
+		/// <summary>一場對戰；回傳 true = A 贏。</summary>
+		public static bool PlayGame(Policy a, Policy b, List<CardSpec> deckA, List<CardSpec> deckB, bool aFirst, Random r, ref int illegal,
+			Side[] sidesOut = null)
+		{
+			var A = new Side { Hero = Hero(30), Power = HeroPower("Deal 2 damage to the enemy hero.") };
+			var B = new Side { Hero = Hero(30), Power = HeroPower("Deal 2 damage to the enemy hero.") };
+			A.Deck = Instantiate(deckA, r);
+			B.Deck = Instantiate(deckB, r);
+			for(var i = 0; i < 3; i++) { Draw(A); Draw(B); }
+			Draw(aFirst ? B : A);
+			(aFirst ? B : A).Hand.Add(Coin());
+			if(sidesOut != null) { sidesOut[0] = A; sidesOut[1] = B; }
+
+			var turn = 0;
+			var aTurn = aFirst;
+			while(A.Hp > 0 && B.Hp > 0 && turn < 80)
+			{
+				var me = aTurn ? A : B;
+				var op = aTurn ? B : A;
+				me.MaxMana = Math.Min(10, me.MaxMana + 1);
+				me.Mana = me.MaxMana;
+				me.HeroPowerUsed = false;
+				foreach(var m in me.Board) { m.Exhausted = false; m.AttacksThisTurn = 0; m.TurnsInPlay++; m.Frozen = false; }
+				Draw(me);
+				var opHpBefore = op.Hp;
+				var opBoardBefore = op.Board.Count;
+				illegal += RunTurn(aTurn ? a : b, me, op);
+				op.FaceDamageTaken += Math.Max(0, opHpBefore - op.Hp);
+				op.MaxBurst = Math.Max(op.MaxBurst, opHpBefore - op.Hp);
+				op.TurnsTaken++;
+				if(opBoardBefore - op.Board.Count >= 2) op.AoeEvents++;
+				aTurn = !aTurn;
+				turn++;
+			}
+			return A.Hp > 0 && B.Hp <= 0;
+		}
+
+		private static int RunTurn(Policy p, Side me, Side op)
+		{
+			var bad = 0;
+			var skip = new HashSet<int>();
+			for(var step = 0; step < 40 && me.Hp > 0 && op.Hp > 0; step++)
+			{
+				var s = FromSides(me, op);
+				var act = p(s, skip);
+				if(act == null || act.Type == ActionType.EndTurn)
+					break;
+				if(!IsLegal(s, act, out _)) { bad++; skip.Add(act.Source.Id); continue; }
+				Apply(me, op, act);
+			}
+			return bad;
+		}
+
 		private static void SelfPlay(int games)
 		{
-			var rng = new Random(2026);
-			int wins = 0, illegal = 0, draws = 0;
-			for(var g = 0; g < games; g++)
+			void Match(string name, Policy a, Policy b, int n, double minRate, bool mirror)
 			{
-				var ai = new Side { Hero = Hero(30), Power = HeroPower("Deal 2 damage to the enemy hero.") };
-				var bot = new Side { Hero = Hero(30), Power = HeroPower("Deal 2 damage to the enemy hero.") };
-				ai.Deck = RandomDeck(rng);
-				bot.Deck = RandomDeck(rng); // 雙方都是隨機牌組，公平比較
-				var aiFirst = g % 2 == 0;
-				for(var i = 0; i < 3; i++) { Draw(ai); Draw(bot); }
-				Draw(aiFirst ? bot : ai);
-				(aiFirst ? bot : ai).Hand.Add(Coin());
-
-				var turn = 0;
-				var aiTurn = aiFirst;
-				while(ai.Hp > 0 && bot.Hp > 0 && turn < 80)
+				var rng = new Random(2026);
+				int wins = 0, illegal = 0;
+				for(var g = 0; g < n; g++)
 				{
-					var me = aiTurn ? ai : bot;
-					var op = aiTurn ? bot : ai;
-					me.MaxMana = Math.Min(10, me.MaxMana + 1);
-					me.Mana = me.MaxMana;
-					me.HeroPowerUsed = false;
-					foreach(var m in me.Board) { m.Exhausted = false; m.AttacksThisTurn = 0; m.TurnsInPlay++; }
-					Draw(me);
-					if(aiTurn) illegal += AiTurn(me, op);
-					else FaceBotTurn(me, op);
-					aiTurn = !aiTurn;
-					turn++;
+					var deckA = RandomDeckSpec(rng);
+					var deckB = mirror ? deckA : RandomDeckSpec(rng);
+					if(PlayGame(a, b, deckA, deckB, g % 2 == 0, rng, ref illegal))
+						wins++;
 				}
-				if(ai.Hp > 0 && bot.Hp <= 0) wins++;
-				else if(!(ai.Hp <= 0 && bot.Hp > 0)) draws++;
+				var rate = wins * 100.0 / n;
+				Check($"{name}：勝率 ≥ {minRate}%", rate >= minRate && illegal == 0, $"{wins}/{n}（{rate:F1}%），不合法動作 {illegal}");
 			}
-			var rate = wins * 100.0 / games;
-			Check($"模擬 {games} 場對戰勝率 ≥ 65%", rate >= 65, $"{wins} 勝 {games - wins - draws} 敗 {draws} 平（勝率 {rate:F0}%）");
-			Check("對戰中所有動作都合法", illegal == 0, $"{illegal} 個不合法");
+
+			Match("新版 AI vs 只會打臉的對手（隨機牌組）", NewAi, FaceBot, games, 65, false);
+			Match("新版 AI vs 會交換的對手（隨機牌組）", NewAi, TraderBot, games, 60, false);
+			Match("新版 AI vs 舊版 v0.3 AI（鏡像牌組，輪流先手）", NewAi, OldAi, games, 50, true);
 		}
 
 		private static Snapshot FromSides(Side me, Side op)
@@ -390,46 +494,6 @@ namespace HsHelper.Tests
 				MyBoard = me.Board.ToList(), OppBoard = op.Board.ToList(), Hand = me.Hand.ToList(),
 				HasCoin = me.Hand.Any(c => c.IsCoin)
 			};
-		}
-
-		private static int AiTurn(Side me, Side op)
-		{
-			var bad = 0;
-			var skip = new HashSet<int>();
-			for(var step = 0; step < 40 && me.Hp > 0 && op.Hp > 0; step++)
-			{
-				var s = FromSides(me, op);
-				var act = Search.BestFirstAction(s, skip, out _);
-				if(act == null || act.Type == ActionType.EndTurn)
-					break;
-				if(!IsLegal(s, act, out _)) { bad++; skip.Add(act.Source.Id); continue; }
-				Apply(me, op, act);
-			}
-			return bad;
-		}
-
-		/// <summary>對手：照費用高到低出牌，能打臉就打臉（只在有嘲諷時才打手下）。</summary>
-		private static void FaceBotTurn(Side me, Side op)
-		{
-			if(me.Hand.Any(c => c.IsCoin) && me.Hand.Any(c => c.Cost == me.Mana + 1))
-				Apply(me, op, new BotAction { Type = ActionType.Play, Source = me.Hand.First(c => c.IsCoin) });
-			foreach(var c in me.Hand.Where(c => !c.IsCoin).OrderByDescending(c => c.Cost).ToList())
-			{
-				if(c.Cost > me.Mana || (c.Kind == Kind.Minion && me.Board.Count >= 7)) continue;
-				Ent target = null;
-				if(c.Kind == Kind.Spell && c.Target != TargetKind.None)
-					target = op.Board.OrderByDescending(m => m.Atk).FirstOrDefault() ?? op.Hero;
-				Apply(me, op, new BotAction { Type = ActionType.Play, Source = c, Target = target });
-			}
-			if(!me.HeroPowerUsed && me.Mana >= 2)
-				Apply(me, op, new BotAction { Type = ActionType.HeroPower, Source = me.Power });
-			foreach(var m in me.Board.ToList())
-			{
-				if(m.Exhausted && !m.Charge || m.Atk <= 0 || m.AttacksThisTurn > 0 || !me.Board.Contains(m)) continue;
-				var taunt = op.Board.FirstOrDefault(x => x.Taunt);
-				Apply(me, op, new BotAction { Type = ActionType.Attack, Source = m, Target = taunt ?? op.Hero });
-				if(op.Hp <= 0) return;
-			}
 		}
 
 		private static void Damage(Side side, Ent target, int dmg)

@@ -22,6 +22,128 @@ namespace HsHelper.Bot
 		private int _endTurnAttempts;
 
 		public bool Running => _running;
+
+		// ───────── 學習 ─────────
+		public static readonly string DataDir = System.IO.Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HsHelper");
+		public static readonly string DbPath = System.IO.Path.Combine(DataDir, "learning.json");
+		public readonly LearningDb Db;
+		public readonly object DbLock = new object();
+		private readonly Weights _baseWeights = new Weights();
+		private bool _gameActive, _gameRecorded;
+		private Style _style;
+		private int _oppTurns, _faceTaken, _maxBurst, _aoe;
+		private int _endLife = -1, _endBoard = -1;
+		private bool _wasMyTurn;
+		public string StyleText { get; private set; } = "";
+
+		public AutoPlayer()
+		{
+			Db = LearningDb.Load(DbPath);
+			// 內建的模擬器學習資料：逐筆比對 Id，資料庫沒有才加入
+			try
+			{
+				using var stream = typeof(AutoPlayer).Assembly.GetManifestResourceStream("HsHelper.learning-seed.json");
+				if(stream != null)
+				{
+					using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
+					var seed = LearningDb.FromJson(reader.ReadToEnd());
+					var (added, _) = Db.Merge(seed.Games);
+					if(added > 0)
+						Db.Save(DbPath);
+					Log.Info($"Learning DB: {Db.Games.Count} records ({added} seed added)");
+				}
+			}
+			catch(Exception ex)
+			{
+				Log.Error(ex);
+			}
+		}
+
+		public (int added, int skipped) Import(string path)
+		{
+			lock(DbLock)
+			{
+				var r = Db.ImportFile(path);
+				Db.Save(DbPath);
+				return r;
+			}
+		}
+
+		public void Export(string path)
+		{
+			lock(DbLock)
+				System.IO.File.WriteAllText(path, Db.ToJson(), System.Text.Encoding.UTF8);
+		}
+
+		/// <summary>對局中追蹤對手打法；我的回合開始時結算對手上一回合造成的傷害／清場。</summary>
+		private void TrackGame(Snapshot s)
+		{
+			if(!_gameActive)
+			{
+				_gameActive = true;
+				_gameRecorded = false;
+				_oppTurns = _faceTaken = _maxBurst = _aoe = 0;
+				_endLife = _endBoard = -1;
+				_wasMyTurn = false;
+				lock(DbLock)
+					_style = Learner.ChooseStyle(Learner.Profile(Db, s.OppClass, s.OppCards));
+			}
+			var life = (s.MyHero?.Hp ?? 0) + (s.MyHero?.Armor ?? 0);
+			var board = s.MyBoard.Count(m => m.Kind == Kind.Minion);
+			if(s.MyTurn && !_wasMyTurn && _endLife >= 0)
+			{
+				var dmg = Math.Max(0, _endLife - life);
+				_oppTurns++;
+				_faceTaken += dmg;
+				_maxBurst = Math.Max(_maxBurst, dmg);
+				if(_endBoard - board >= 2) _aoe++;
+			}
+			if(s.MyTurn)
+			{
+				_endLife = life;
+				_endBoard = board;
+			}
+			_wasMyTurn = s.MyTurn;
+		}
+
+		private void ApplyLearning(Snapshot s)
+		{
+			OpponentProfile p;
+			lock(DbLock)
+				p = Learner.Profile(Db, s.OppClass, s.OppCards,
+					_oppTurns > 0 ? _faceTaken / (double)_oppTurns : -1,
+					_oppTurns > 0 ? _aoe * 5.0 / _oppTurns : -1);
+			Search.W = Learner.Adjust(_baseWeights, _style, p);
+			StyleText = Learner.Describe(_style, p);
+		}
+
+		private void RecordGame(Snapshot s)
+		{
+			if(!_gameActive || _gameRecorded)
+				return;
+			_gameRecorded = true;
+			_gameActive = false;
+			var rec = new GameRecord
+			{
+				Source = "real", OppClass = s.OppClass ?? "", OppCards = s.OppCards ?? new List<string>(),
+				Won = s.Won, Style = (int)_style, OppTurns = _oppTurns, FaceDmgTaken = _faceTaken,
+				MaxBurst = _maxBurst, AoeEvents = _aoe
+			};
+			try
+			{
+				lock(DbLock)
+				{
+					Db.Add(rec);
+					Db.Save(DbPath);
+				}
+				Log.Info($"Learning: recorded {(rec.Won ? "WIN" : "LOSS")} vs {rec.OppClass}, style {_style}");
+			}
+			catch(Exception ex)
+			{
+				Log.Error(ex);
+			}
+		}
 		/// <summary>對戰結束後自動點掉結算／獎勵畫面，並按「開始」進下一場。</summary>
 		public bool AutoNext { get; set; } = true;
 		private DateTime _lastPlayClick = DateTime.MinValue;
@@ -96,12 +218,19 @@ namespace HsHelper.Bot
 			{
 				_mulliganDone = false;
 				_skipTurn = -1;
-				if(s.GameOver) _sawGameOver = true;
+				if(s.GameOver)
+				{
+					_sawGameOver = true;
+					RecordGame(s);
+				}
+				else if(!s.InGame && _gameActive && _sawGameOver == false)
+					_gameActive = false; // 對局中途離開（例如投降後才開自動）：不記錄
 				HandleMenus(s.GameOver);
 				return;
 			}
 			_playClicks = 0;
 			_sawGameOver = false;
+			TrackGame(s);
 
 			if(s.MulliganInput)
 			{
@@ -135,6 +264,7 @@ namespace HsHelper.Bot
 				return;
 			}
 
+			ApplyLearning(s);
 			BotAction action;
 			try
 			{

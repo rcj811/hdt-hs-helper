@@ -37,7 +37,7 @@ namespace HsHelper
 
 		private static readonly Brush AutoOnBrush = new SolidColorBrush(Color.FromRgb(0x6B, 0xE0, 0x7A));
 
-		public void Render(GameSnapshot s, bool autoOn, string autoStatus)
+		public void Render(GameSnapshot s, bool autoOn, string autoStatus, string style = "")
 		{
 			if(_userHidden || !s.InGame)
 			{
@@ -50,7 +50,11 @@ namespace HsHelper
 			Add(s.IsBattlegrounds ? "爐石輔助・酒館戰棋" : "爐石輔助・對戰", TitleBrush, 14, true);
 			Add($"回合 {s.Turn}", DimBrush);
 			if(!s.IsBattlegrounds)
+			{
 				Add(autoOn ? $"▶ 自動：{autoStatus}" : "自動出牌：關（F8 開始）", autoOn ? AutoOnBrush : DimBrush, 12, autoOn, 2);
+				if(autoOn && !string.IsNullOrEmpty(style))
+					Add($"　打法：{style}", DimBrush, 11);
+			}
 
 			if(s.IsBattlegrounds)
 			{

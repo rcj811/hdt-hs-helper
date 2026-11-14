@@ -11,10 +11,31 @@ namespace HsHelper.Bot
 	/// 模擬器是簡化版：精準處理攻擊、嘲諷、聖盾、劇毒、吸血、突襲／衝鋒、武器、傷害法術；
 	/// 看不懂的卡牌效果用「費用估值」近似。每次只執行最佳路線的第一步，執行完重新讀狀態再搜尋。
 	/// </summary>
+	/// <summary>評分權重（預設值由模擬器中的演化演算法調整，起點參考 SilverFish Control 行為）。</summary>
+	public class Weights
+	{
+		// 以下預設值由演化演算法在模擬器中調整（tests/HsHelper.Tests --tune），起點為 SilverFish Control 權重
+		public double HeroHp = 1.195, LowHpPenalty = 1.897, LowHpLine = 8.118;
+		public double OppHp = 0.948, OppLowBonus = 3.533, OppLowLine = 9.869;
+		public double MyMinionBase = 4.817, MyMinionAtk = 2.195, MyMinionHp = 2.001;
+		public double OppMinionBase = 4.267, OppMinionAtk = 2.082, OppMinionHp = 1.243, OppAtk4 = 9.338, OppAtk7 = 50, OppTaunt = 3.593;
+		public double HandCard = 5.579, ManaLeft = 4.149, Weapon = 1;
+		public double LethalRisk = 353.709;      // 對手下回合能斬殺我
+		public double AggroFace = 2.077;       // 進攻模式：對手英雄血量的權重倍率
+		public bool EnemyTurn = true;        // 是否模擬對手下回合反擊（SilverFish 的 EnemyTurnSimulator 概念）
+		public double EnemyTurnBlend = 0.457;  // 反擊後評分所佔比重
+		public int RerankTop = 30;           // 只對前 N 個候選局面做反擊模擬
+		public double Overextend = 0;        // 學習：對手常用 AOE 時，場上超過 3 隻手下每隻扣分
+		public double EnemyBurst = 2;        // 學習：對手手牌／技能的預估額外傷害
+
+		public Weights Clone() => (Weights)MemberwiseClone();
+	}
+
 	public static class Search
 	{
-		public const int MaxDepth = 12;
-		public const int BeamWidth = 200;
+		public static int MaxDepth = 12;
+		public static int BeamWidth = 200;
+		public static Weights W = new Weights();
 
 		// ───────── 模擬狀態 ─────────
 		private class M // 手下
@@ -49,6 +70,7 @@ namespace HsHelper.Bot
 			public double Bonus;            // 看不懂效果的牌：用費用估值
 			public List<Move> Moves = new List<Move>();
 			public int NextTokenId = -1;
+			public bool Aggro;              // 「誰是打臉方」：這回合採進攻模式
 
 			public S Clone()
 			{
@@ -84,8 +106,9 @@ namespace HsHelper.Bot
 			if(root == null)
 				return null;
 
-			var best = root;
-			var bestScore = Evaluate(root);
+			var w = W;
+			root.Aggro = IsBeatdown(root);
+			var pool = new List<(S st, double score)> { (root, Evaluate(root, w)) };
 			var layer = new List<S> { root };
 			for(var depth = 0; depth < MaxDepth && layer.Count > 0; depth++)
 			{
@@ -96,15 +119,28 @@ namespace HsHelper.Bot
 					var key = child.Key();
 					if(next.ContainsKey(key))
 						continue;
-					var sc = Evaluate(child);
-					next[key] = (child, sc);
-					if(sc > bestScore)
+					next[key] = (child, Evaluate(child, w));
+				}
+				var ranked = next.Values.OrderByDescending(x => x.score).ToList();
+				layer = ranked.Take(BeamWidth).Select(x => x.st).ToList();
+				pool.AddRange(ranked.Take(w.RerankTop));
+			}
+
+			// 最後挑選：前幾名候選再模擬一次「對手下回合反擊」，用反擊後的局面重新評分
+			var top = pool.OrderByDescending(x => x.score).Take(w.RerankTop).ToList();
+			var best = top[0].st;
+			if(w.EnemyTurn && top[0].score < 5e5)
+			{
+				var bestScore = double.MinValue;
+				foreach(var (st, sc) in top)
+				{
+					var final = st.Opp.Hp <= 0 ? sc : (1 - w.EnemyTurnBlend) * sc + w.EnemyTurnBlend * Evaluate(EnemyResponse(st, w), w, true);
+					if(final > bestScore)
 					{
-						bestScore = sc;
-						best = child;
+						bestScore = final;
+						best = st;
 					}
 				}
-				layer = next.Values.OrderByDescending(x => x.score).Take(BeamWidth).Select(x => x.st).ToList();
 			}
 
 			if(best.Moves.Count == 0)
@@ -504,48 +540,120 @@ namespace HsHelper.Bot
 			st.Op.RemoveAll(m => m.Hp <= 0);
 		}
 
-		// ───────── 評分（權重參考 SilverFish 的 Control 行為）─────────
-		private static double Evaluate(S st)
+		// ───────── 誰是打臉方（Who's the Beatdown）─────────
+		/// <summary>
+		/// 比較雙方「幾回合能打死對方」：我方比較快、或場面攻擊明顯佔優 → 進攻模式（更重視對手英雄血量）。
+		/// </summary>
+		private static bool IsBeatdown(S st)
+		{
+			var myAtk = st.My.Sum(m => m.Atk) + st.Me.Atk;
+			var oppAtk = Math.Max(1, st.Op.Sum(m => m.Atk));
+			var oppLife = st.Opp.Hp + st.Opp.Armor;
+			var myLife = st.Me.Hp + st.Me.Armor;
+			var myClock = myAtk <= 0 ? 99 : Math.Ceiling(oppLife / (double)myAtk);
+			var oppClock = Math.Ceiling(myLife / (double)oppAtk);
+			return myClock < oppClock || (oppLife <= 15 && myAtk >= oppAtk);
+		}
+
+		// ───────── 對手回合模擬 ─────────
+		/// <summary>
+		/// 簡化的對手反擊：對手每隻能攻擊的手下（攻擊力高的先）依序挑「讓我方評分最低」的目標
+		/// （有嘲諷只能打嘲諷）；最後假設對手英雄技能／法術再補 2 點傷害。
+		/// </summary>
+		private static S EnemyResponse(S st, Weights w)
+		{
+			var n = st.Clone();
+			// 回合交換：敵方手下解凍、我方的凍結狀態不影響
+			foreach(var m in n.Op) { m.AttacksLeft = m.Frozen ? 0 : (m.Windfury ? 2 : 1); m.Frozen = false; }
+			foreach(var m in n.Op.OrderByDescending(m => m.Atk).ToList())
+			{
+				while(m.AttacksLeft > 0 && m.Atk > 0 && n.Op.Contains(m) && n.Me.Hp > 0)
+				{
+					var taunts = n.My.Where(x => x.Taunt && !x.Stealth).ToList();
+					var targets = taunts.Count > 0 ? taunts.Cast<M>().ToList() : n.My.Where(x => !x.Stealth).ToList();
+					S bestState = null;
+					var bestVal = double.MaxValue;
+					foreach(var t in targets)
+					{
+						var c = n.Clone();
+						EnemyAttack(c, c.Op.First(x => x.Id == m.Id), c.My.First(x => x.Id == t.Id));
+						var v = Evaluate(c, w, true);
+						if(v < bestVal) { bestVal = v; bestState = c; }
+					}
+					if(taunts.Count == 0 && !n.Me.Immune)
+					{
+						var c = n.Clone();
+						var a = c.Op.First(x => x.Id == m.Id);
+						DamageHero(c.Me, a.Atk);
+						a.AttacksLeft--;
+						var v = Evaluate(c, w, true);
+						if(v < bestVal) { bestVal = v; bestState = c; }
+					}
+					if(bestState == null)
+						break;
+					n = bestState;
+					m.AttacksLeft--;
+				}
+			}
+			DamageHero(n.Me, (int)Math.Round(w.EnemyBurst)); // 對手手牌／英雄技能的預估傷害（會從過去對局學習）
+			return n;
+		}
+
+		private static void EnemyAttack(S st, M attacker, M defender)
+		{
+			var hadDs = defender.DS;
+			Hit(defender, attacker.Atk);
+			if(!hadDs && attacker.Poison && attacker.Atk > 0) defender.Hp = 0;
+			var hadDsA = attacker.DS;
+			Hit(attacker, defender.Atk);
+			if(!hadDsA && defender.Poison && defender.Atk > 0) attacker.Hp = 0;
+			attacker.AttacksLeft--;
+			RemoveDead(st);
+		}
+
+		// ───────── 評分（權重參考 SilverFish 的 Control 行為，再用演化演算法調整）─────────
+		private static double Evaluate(S st, Weights w, bool afterEnemyTurn = false)
 		{
 			if(st.Opp.Hp <= 0)
 				return 1e6 - st.Moves.Count; // 斬殺：越少步越好
+			if(st.Me.Hp <= 0)
+				return -1e6;
 			double v = 0;
 
-			// 我方英雄：10 血以下開始重罰
+			// 我方英雄：低於警戒線開始平方重罰
 			var myLife = st.Me.Hp + st.Me.Armor;
-			v += myLife > 10 ? myLife : -2 * Math.Pow(11 - myLife, 2);
+			v += myLife > w.LowHpLine ? myLife * w.HeroHp : -w.LowHpPenalty * Math.Pow(w.LowHpLine + 1 - myLife, 2);
 
-			// 敵方英雄：11 血以下，越低越加分（壓血）
+			// 敵方英雄：低於警戒線越低越加分（壓血）；進攻模式加重
 			var oppLife = st.Opp.Hp + st.Opp.Armor;
-			v += oppLife > 11 ? -oppLife : 4 * (12 - oppLife);
+			var face = st.Aggro ? w.AggroFace : 1.0;
+			v += face * (oppLife > w.OppLowLine ? -oppLife * w.OppHp : w.OppLowBonus * (w.OppLowLine + 1 - oppLife));
 
-			// 武器
-			v += st.Me.WeaponAtk * st.Me.WeaponDur;
+			v += w.Weapon * st.Me.WeaponAtk * st.Me.WeaponDur;
 
-			// 我方手下
 			foreach(var m in st.My)
 			{
-				v += 5 + m.Hp * 2 + m.Atk * 2;
-				if(m.DS) v += 1;
+				v += w.MyMinionBase + m.Hp * w.MyMinionHp + m.Atk * w.MyMinionAtk;
+				if(m.DS) v += 1 + m.Atk * 0.5;
 				if(m.Stealth) v += 1;
 				if(m.Lifesteal) v += m.Atk / 2.0;
-				if(m.DS && m.Taunt) v += 4;
+				if(m.Taunt) v += 1 + (m.DS ? 4 : 0);
 				if(m.Windfury) v += m.Atk;
+				if(m.Poison) v += 2;
 			}
 
-			// 敵方手下（高攻擊威脅加重）
 			foreach(var m in st.Op)
 			{
-				double e = 5 + m.Hp * 2;
-				if(!m.Frozen)
+				double e = w.OppMinionBase + m.Hp * w.OppMinionHp;
+				if(!m.Frozen || afterEnemyTurn)
 				{
-					e += m.Atk * 2;
+					e += m.Atk * w.OppMinionAtk;
 					if(m.Windfury) e += m.Atk * 2;
-					if(m.Atk >= 4) e += 10;
-					if(m.Atk >= 7) e += 50;
+					if(m.Atk >= 4) e += w.OppAtk4;
+					if(m.Atk >= 7) e += w.OppAtk7;
 				}
 				if(m.Atk == 0) e -= 7;
-				if(m.Taunt) e += 5;
+				if(m.Taunt) e += w.OppTaunt;
 				if(m.DS) e += m.Atk;
 				if(m.DS && m.Taunt) e += 5;
 				if(m.Poison) e += 4 + (st.My.Count < st.Op.Count ? 10 : 0);
@@ -553,16 +661,20 @@ namespace HsHelper.Bot
 				v -= e;
 			}
 
-			// 手牌、剩餘法力
-			v += st.Hand.Count * 5;
+			v -= w.Overextend * Math.Max(0, st.My.Count - 3);
+			v += st.Hand.Count * w.HandCard;
 			v += st.Bonus;
-			v -= 5 * Math.Max(0, st.Mana);
+			if(!afterEnemyTurn)
+				v -= w.ManaLeft * Math.Max(0, st.Mana);
 
 			// 下回合危險：敵方場面攻擊 ≥ 我方血量（扣掉我方嘲諷能擋的）
-			var threat = st.Op.Where(m => !m.Frozen).Sum(m => m.Atk * (m.Windfury ? 2 : 1));
-			var blocked = st.My.Where(m => m.Taunt).Sum(m => m.Hp);
-			if(threat - blocked * 0.5 >= myLife)
-				v -= 300;
+			if(!afterEnemyTurn)
+			{
+				var threat = st.Op.Where(m => !m.Frozen).Sum(m => m.Atk * (m.Windfury ? 2 : 1));
+				var blocked = st.My.Where(m => m.Taunt).Sum(m => m.Hp);
+				if(threat - blocked * 0.5 >= myLife)
+					v -= w.LethalRisk;
+			}
 			return v;
 		}
 

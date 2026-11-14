@@ -65,6 +65,9 @@ namespace HsHelper.Bot
 		public List<Ent> Offered = new List<Ent>();
 		public Ent MyHero, OppHero, MyHeroPower, MyWeapon;
 		public bool HasCoin;
+		public bool Won;                                  // 對局結束時：我贏了
+		public string OppClass;
+		public List<string> OppCards = new List<string>(); // 對手出過的牌（學習用的牌組特徵）
 
 		// 螢幕上的固定位置
 		public Point EndTurn;

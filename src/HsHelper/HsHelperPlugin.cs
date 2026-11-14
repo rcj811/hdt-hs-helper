@@ -26,7 +26,7 @@ namespace HsHelper
 		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 3, 2);
+		public Version Version => new Version(0, 4, 0);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -51,6 +51,13 @@ namespace HsHelper
 				_menuItem.Items.Add(panelItem);
 				_menuItem.Items.Add(autoItem);
 				_menuItem.Items.Add(nextItem);
+				_menuItem.Items.Add(new Separator());
+				var exportItem = new MenuItem { Header = "匯出學習資料…" };
+				exportItem.Click += (s, e) => ExportLearning();
+				var importItem = new MenuItem { Header = "匯入學習資料…（自動比對去重）" };
+				importItem.Click += (s, e) => ImportLearning();
+				_menuItem.Items.Add(exportItem);
+				_menuItem.Items.Add(importItem);
 
 				Log.Info("HsHelper loaded");
 			}
@@ -87,7 +94,7 @@ namespace HsHelper
 			_lastRefresh = DateTime.Now;
 			try
 			{
-				_panel.Render(GameStateReader.Read(), _auto.Running, _auto.Status);
+				_panel.Render(GameStateReader.Read(), _auto.Running, _auto.Status, _auto.StyleText);
 			}
 			catch(Exception ex)
 			{
@@ -127,6 +134,52 @@ namespace HsHelper
 			}
 			else
 				_toast?.Show("■ 已停止自動打牌", Color.FromRgb(0xFF, 0x6B, 0x6B));
+		}
+
+		private void ExportLearning()
+		{
+			try
+			{
+				var dlg = new Microsoft.Win32.SaveFileDialog
+				{
+					FileName = $"hshelper-learning-{DateTime.Now:yyyyMMdd}.json",
+					Filter = "學習資料 (*.json)|*.json"
+				};
+				if(dlg.ShowDialog() != true)
+					return;
+				_auto.Export(dlg.FileName);
+				int n;
+				lock(_auto.DbLock) n = _auto.Db.Games.Count;
+				_toast?.Show($"已匯出 {n} 筆學習資料", Color.FromRgb(0x6B, 0xC5, 0xF8));
+			}
+			catch(Exception ex)
+			{
+				Log.Error(ex);
+				_toast?.Show("匯出失敗：" + ex.Message, Color.FromRgb(0xFF, 0x6B, 0x6B));
+			}
+		}
+
+		private void ImportLearning()
+		{
+			try
+			{
+				var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "學習資料 (*.json)|*.json", Multiselect = true };
+				if(dlg.ShowDialog() != true)
+					return;
+				int added = 0, skipped = 0;
+				foreach(var f in dlg.FileNames)
+				{
+					var (a, sk) = _auto.Import(f);
+					added += a;
+					skipped += sk;
+				}
+				_toast?.Show($"匯入完成：新增 {added} 筆，略過重複 {skipped} 筆", Color.FromRgb(0x6B, 0xC5, 0xF8));
+			}
+			catch(Exception ex)
+			{
+				Log.Error(ex);
+				_toast?.Show("匯入失敗：檔案格式不正確", Color.FromRgb(0xFF, 0x6B, 0x6B));
+			}
 		}
 
 		private void TogglePanel()

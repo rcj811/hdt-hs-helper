@@ -37,6 +37,16 @@ namespace HsHelper.Bot
 			s.MyTurn = me.GetTag(GameTag.CURRENT_PLAYER) == 1;
 			s.Turn = game.GetTurnNumber();
 			s.MyClass = game.Player.CurrentClass;
+			s.OppClass = game.Opponent.CurrentClass;
+			var ps = me.GetTag(GameTag.PLAYSTATE);
+			s.Won = ps == (int)PlayState.WON;
+			try
+			{
+				s.OppCards = game.Opponent.RevealedEntities
+					.Where(e => !string.IsNullOrEmpty(e.CardId) && !e.Info.Created)
+					.Select(e => e.CardId).Distinct().ToList();
+			}
+			catch(Exception) { /* 讀不到就算了 */ }
 			s.Mana = me.GetTag(GameTag.RESOURCES) + me.GetTag(GameTag.TEMP_RESOURCES)
 			         - me.GetTag(GameTag.RESOURCES_USED) - me.GetTag(GameTag.OVERLOAD_LOCKED);
 
