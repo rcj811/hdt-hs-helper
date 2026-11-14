@@ -22,6 +22,11 @@ namespace HsHelper.Bot
 		private int _endTurnAttempts;
 
 		public bool Running => _running;
+		/// <summary>對戰結束後自動點掉結算／獎勵畫面，並按「開始」進下一場。</summary>
+		public bool AutoNext { get; set; } = true;
+		private DateTime _lastPlayClick = DateTime.MinValue;
+		private int _playClicks;
+		private bool _sawGameOver;
 		public string Status { get; private set; } = "關閉（按 F8 開始）";
 
 		public void Toggle()
@@ -81,19 +86,22 @@ namespace HsHelper.Bot
 		private void Step()
 		{
 			var s = Read();
-			if(!s.InGame || s.GameOver)
-			{
-				_mulliganDone = false;
-				Status = s.GameOver ? "對戰結束，等待下一場" : "等待對戰（只支援構築／練習模式）";
-				Thread.Sleep(1000);
-				return;
-			}
 			if(!Input.HearthstoneInForeground())
 			{
 				Status = "暫停：請把爐石視窗切到最前面";
 				Thread.Sleep(700);
 				return;
 			}
+			if(!s.InGame || s.GameOver)
+			{
+				_mulliganDone = false;
+				_skipTurn = -1;
+				if(s.GameOver) _sawGameOver = true;
+				HandleMenus(s.GameOver);
+				return;
+			}
+			_playClicks = 0;
+			_sawGameOver = false;
 
 			if(s.MulliganInput)
 			{
@@ -145,6 +153,79 @@ namespace HsHelper.Bot
 			Execute(s, action);
 		}
 
+		// ───────── 對戰結束／選單：自動下一場 ─────────
+		private static MenuState ReadMenu()
+		{
+			try { return Application.Current.Dispatcher.Invoke(new Func<MenuState>(Menu.Read)); }
+			catch(Exception) { return new MenuState(); }
+		}
+
+		private void HandleMenus(bool gameOver)
+		{
+			var m = ReadMenu();
+			if(!AutoNext)
+			{
+				Status = gameOver ? "對戰結束（自動下一場已關閉）" : "等待對戰";
+				Thread.Sleep(1000);
+				return;
+			}
+			if(!m.HasWindow)
+			{
+				Thread.Sleep(1000);
+				return;
+			}
+
+			// 還在對戰場景：勝利／失敗畫面、經驗條、獎勵 → 點擊以繼續
+			if(m.Mode == Hearthstone_Deck_Tracker.Enums.Hearthstone.Mode.GAMEPLAY && !_sawGameOver)
+			{
+				Status = "對戰載入中…";
+				Thread.Sleep(1000);
+				return;
+			}
+			if(gameOver || m.Mode == Hearthstone_Deck_Tracker.Enums.Hearthstone.Mode.GAMEPLAY)
+			{
+				Status = "對戰結束：點擊以繼續／領取獎勵";
+				Input.Pause(2500, 3500);
+				Input.Click(m.ContinueText);
+				Input.Pause(1500, 2200);
+				return;
+			}
+
+			// 回到「對戰」或「練習」的選牌畫面：按「開始」
+			var mode = m.Mode;
+			var canQueue = mode == Hearthstone_Deck_Tracker.Enums.Hearthstone.Mode.TOURNAMENT
+			               || mode == Hearthstone_Deck_Tracker.Enums.Hearthstone.Mode.ADVENTURE;
+			if(!canQueue)
+			{
+				Status = "在其他畫面，請進入「對戰」或「練習」選好牌組";
+				Thread.Sleep(1500);
+				return;
+			}
+			if(m.InQueue)
+			{
+				Status = "配對中…";
+				Thread.Sleep(1500);
+				return;
+			}
+			// 每次按完至少等 6 秒（可能是先關掉獎勵視窗，或正在進入對戰）
+			if((DateTime.Now - _lastPlayClick).TotalSeconds < 6)
+			{
+				Thread.Sleep(800);
+				return;
+			}
+			if(_playClicks >= 6)
+			{
+				Status = "按了幾次「開始」都沒反應，請手動開始（或回報位置）";
+				Thread.Sleep(2000);
+				return;
+			}
+			Status = "自動開始下一場";
+			Input.Pause(2000, 3000);
+			Input.Click(m.PlayButton);
+			_lastPlayClick = DateTime.Now;
+			_playClicks++;
+		}
+
 		// ───────── 換牌 ─────────
 		private void DoMulligan(Snapshot s)
 		{
@@ -160,9 +241,9 @@ namespace HsHelper.Bot
 					continue;
 				Log.Info($"Mulligan: replace {cards[i].Name}");
 				Input.Click(s.MulliganCards[i]);
-				Input.Pause(350, 600);
+				Input.Pause(700, 1100);
 			}
-			Input.Pause(400, 700);
+			Input.Pause(900, 1400);
 			Input.Click(s.MulliganConfirm[0]);
 			_mulliganDone = true;
 			_confirmTry = 1;
@@ -196,7 +277,7 @@ namespace HsHelper.Bot
 			switch(a.Type)
 			{
 				case ActionType.EndTurn:
-					Input.Pause(300, 700);
+					Input.Pause(900, 1600);
 					Input.Click(s.EndTurn);
 					_endTurnAttempts++;
 					WaitUntil(x => !x.MyTurn, 5000);
@@ -217,7 +298,7 @@ namespace HsHelper.Bot
 					break;
 			}
 			Input.Hover(s.Neutral);
-			Input.Pause(500, 900);
+			Input.Pause(1200, 2000); // 放慢：每個動作之間停 1.2～2 秒
 		}
 
 		private void PlayCard(Snapshot s, BotAction a)

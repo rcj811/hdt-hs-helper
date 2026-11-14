@@ -24,7 +24,7 @@ namespace HsHelper
 		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 2, 0);
+		public Version Version => new Version(0, 3, 0);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -43,8 +43,11 @@ namespace HsHelper
 				panelItem.Click += (s, e) => TogglePanel();
 				var autoItem = new MenuItem { Header = "自動出牌 開始／停止（F8）" };
 				autoItem.Click += (s, e) => _auto.Toggle();
+				var nextItem = new MenuItem { Header = "對戰結束後自動下一場", IsCheckable = true, IsChecked = _auto.AutoNext };
+				nextItem.Click += (s, e) => _auto.AutoNext = nextItem.IsChecked;
 				_menuItem.Items.Add(panelItem);
 				_menuItem.Items.Add(autoItem);
+				_menuItem.Items.Add(nextItem);
 
 				Log.Info("HsHelper loaded");
 			}

@@ -51,7 +51,7 @@ namespace HsHelper.Bot
 				var t = (double)i / steps;
 				t = t * t * (3 - 2 * t); // 平滑加減速
 				SetCursorPos((int)(sx + (target.X - sx) * t), (int)(sy + (target.Y - sy) * t));
-				Pause(6, 14);
+				Pause(10, 22);
 			}
 		}
 
@@ -59,10 +59,10 @@ namespace HsHelper.Bot
 
 		public static void Click(Point p)
 		{
-			MoveTo(J(p), 12);
-			Pause(60, 130);
+			MoveTo(J(p), 18);
+			Pause(180, 320);
 			mouse_event(LeftDown, 0, 0, 0, UIntPtr.Zero);
-			Pause(40, 90);
+			Pause(70, 140);
 			mouse_event(LeftUp, 0, 0, 0, UIntPtr.Zero);
 		}
 
@@ -75,12 +75,12 @@ namespace HsHelper.Bot
 
 		public static void Drag(Point from, Point to)
 		{
-			MoveTo(J(from, 3), 12);
-			Pause(150, 260); // 讓手牌放大動畫跑完
+			MoveTo(J(from, 3), 18);
+			Pause(300, 480); // 讓手牌放大動畫跑完
 			mouse_event(LeftDown, 0, 0, 0, UIntPtr.Zero);
-			Pause(80, 140);
-			MoveTo(J(to), 18);
-			Pause(90, 170);
+			Pause(150, 260);
+			MoveTo(J(to), 28);
+			Pause(200, 350);
 			mouse_event(LeftUp, 0, 0, 0, UIntPtr.Zero);
 		}
 
