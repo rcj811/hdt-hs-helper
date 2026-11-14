@@ -5,6 +5,11 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release:
+        description: "建立 GitHub Release（版本號取自 csproj）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -48,15 +53,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: HsHelper-${{ steps.ver.outputs.version }}
           path: |
             installer/Output/HsHelper-Setup-*.exe
             out/HsHelper.dll
 
-      - name: Publish GitHub release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" installer/Output/HsHelper-Setup-*.exe out/HsHelper.dll --title "${{ github.ref_name }}" --notes "爐石輔助 ${{ github.ref_name }}"
+        run: |
+          $tag = "v${{ steps.ver.outputs.version }}"
+          gh release create $tag (Get-Item installer/Output/HsHelper-Setup-*.exe).FullName out/HsHelper.dll --target "${{ github.sha }}" --title "爐石輔助 $tag" --notes "安裝檔：HsHelper-Setup-${{ steps.ver.outputs.version }}.exe（會自動偵測並安裝官方 HDT）。編譯時對應 HDT：$(Get-Content hdt-ref/hdt-version.txt)"

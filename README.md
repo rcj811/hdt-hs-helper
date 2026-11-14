@@ -30,7 +30,7 @@ HDT 選單「外掛」或外掛設定頁的按鈕可以顯示／隱藏面板。
 - `installer/HsHelper.iss`：Inno Setup 安裝程式
 - `scripts/fetch-hdt-refs.ps1`：編譯時從官方 HDT 發行版取出參考檔（不放進 repo）
 
-推到 `main` 會自動編譯；推 `v*` tag（例如 `v0.1.0`）會另外建立 Release。
+推到 `main` 會自動編譯。要發布新版：改 `HsHelper.csproj` 的 `<Version>`，再到 Actions → Build → Run workflow 勾選「建立 GitHub Release」。
 
 ## 授權說明
 
