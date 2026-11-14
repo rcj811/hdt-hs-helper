@@ -36,6 +36,7 @@ namespace HsHelper.Bot
 		private int _endLife = -1, _endBoard = -1;
 		private bool _wasMyTurn;
 		public string StyleText { get; private set; } = "";
+		private string _deckText = "";
 
 		public AutoPlayer()
 		{
@@ -115,7 +116,7 @@ namespace HsHelper.Bot
 					_oppTurns > 0 ? _faceTaken / (double)_oppTurns : -1,
 					_oppTurns > 0 ? _aoe * 5.0 / _oppTurns : -1);
 			Search.W = Learner.Adjust(_baseWeights, _style, p);
-			StyleText = Learner.Describe(_style, p);
+			StyleText = Learner.Describe(_style, p) + (string.IsNullOrEmpty(s.DeckName) ? "" : $"｜套牌 {s.DeckName}");
 		}
 
 		private void RecordGame(Snapshot s)
@@ -128,6 +129,7 @@ namespace HsHelper.Bot
 			{
 				Source = "real", OppClass = s.OppClass ?? "", OppCards = s.OppCards ?? new List<string>(),
 				Won = s.Won, Style = (int)_style, OppTurns = _oppTurns, FaceDmgTaken = _faceTaken,
+				DeckId = s.DeckId, DeckName = s.DeckName ?? "",
 				MaxBurst = _maxBurst, AoeEvents = _aoe
 			};
 			try
@@ -146,6 +148,10 @@ namespace HsHelper.Bot
 		}
 		/// <summary>對戰結束後自動點掉結算／獎勵畫面，並按「開始」進下一場。</summary>
 		public bool AutoNext { get; set; } = true;
+		/// <summary>開始下一場前，自動選預估勝率最高的套牌。</summary>
+		public bool AutoDeck { get; set; } = true;
+		private bool _deckReady;
+		private int _deckClickTries;
 		private DateTime _lastPlayClick = DateTime.MinValue;
 		private int _playClicks;
 		private bool _sawGameOver;
@@ -230,6 +236,8 @@ namespace HsHelper.Bot
 			}
 			_playClicks = 0;
 			_sawGameOver = false;
+			_deckReady = false;
+			_deckClickTries = 0;
 			TrackGame(s);
 
 			if(s.MulliganInput)
@@ -337,6 +345,48 @@ namespace HsHelper.Bot
 				Thread.Sleep(1500);
 				return;
 			}
+			// 自動選套牌：挑預估勝率最高的，點選後下一輪再讀一次確認
+			if(AutoDeck && !_deckReady)
+			{
+				var page = DeckPicker.Read();
+				if(!page.Ok)
+					_deckReady = true; // 讀不到（例如不在選套牌畫面）就用目前的
+				else
+				{
+					DeckInfo best;
+					string reason;
+					lock(DbLock)
+						best = DeckChooser.Choose(page.Decks, Db, out reason);
+					if(best == null || page.Selected == best.Id)
+					{
+						_deckReady = true;
+						_deckText = reason;
+						Status = "已選套牌：" + reason;
+						Log.Info("Deck: " + reason);
+					}
+					else if(_deckClickTries >= 3)
+					{
+						_deckReady = true;
+						Status = "選套牌沒成功，使用目前的套牌";
+					}
+					else
+					{
+						var pt = Application.Current.Dispatcher.Invoke(new Func<Point?>(() => DeckPicker.SlotPoint(best.Slot)));
+						if(pt == null)
+						{
+							_deckReady = true;
+							return;
+						}
+						Status = "選套牌：" + reason;
+						Input.Pause(800, 1500);
+						Input.Click(pt.Value);
+						_deckClickTries++;
+						Input.Pause(1500, 2200);
+						return;
+					}
+				}
+			}
+
 			// 每次按完至少等 6 秒（可能是先關掉獎勵視窗，或正在進入對戰）
 			if((DateTime.Now - _lastPlayClick).TotalSeconds < 6)
 			{

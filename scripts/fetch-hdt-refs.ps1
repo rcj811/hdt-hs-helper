@@ -23,7 +23,7 @@ $extract = Join-Path $tmp "x"
 Expand-Archive -Path $zip -DestinationPath $extract
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-foreach ($name in @("HearthstoneDeckTracker.exe", "HearthDb.dll")) {
+foreach ($name in @("HearthstoneDeckTracker.exe", "HearthDb.dll", "HearthMirror.dll")) {
     $f = Get-ChildItem $extract -Recurse -Filter $name | Select-Object -First 1
     if (-not $f) { throw "$name not found inside package" }
     Copy-Item $f.FullName (Join-Path $OutDir $name) -Force

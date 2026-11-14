@@ -26,7 +26,7 @@ namespace HsHelper
 		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 4, 0);
+		public Version Version => new Version(0, 5, 0);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -51,6 +51,9 @@ namespace HsHelper
 				_menuItem.Items.Add(panelItem);
 				_menuItem.Items.Add(autoItem);
 				_menuItem.Items.Add(nextItem);
+				var deckItem = new MenuItem { Header = "自動選勝率最高的套牌", IsCheckable = true, IsChecked = _auto.AutoDeck };
+				deckItem.Click += (s, e) => _auto.AutoDeck = deckItem.IsChecked;
+				_menuItem.Items.Add(deckItem);
 				_menuItem.Items.Add(new Separator());
 				var exportItem = new MenuItem { Header = "匯出學習資料…" };
 				exportItem.Click += (s, e) => ExportLearning();

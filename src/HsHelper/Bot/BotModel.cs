@@ -66,6 +66,8 @@ namespace HsHelper.Bot
 		public Ent MyHero, OppHero, MyHeroPower, MyWeapon;
 		public bool HasCoin;
 		public bool Won;                                  // 對局結束時：我贏了
+		public long DeckId;                               // 這場用的套牌
+		public string DeckName = "";
 		public string OppClass;
 		public List<string> OppCards = new List<string>(); // 對手出過的牌（學習用的牌組特徵）
 

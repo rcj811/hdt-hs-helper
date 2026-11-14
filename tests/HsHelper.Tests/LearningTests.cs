@@ -112,9 +112,56 @@ namespace HsHelper.Tests
 
 		public static void Run(string seedPath)
 		{
+			DeckChoice();
 			ImportExport(seedPath);
 			OnlineLearning();
 			Search.W = new Weights();
+		}
+
+		/// <summary>自動選套牌：AI 適合度、依實戰勝率挑選、一直輸會換牌。</summary>
+		private static void DeckChoice()
+		{
+			IEnumerable<(bool, int, string, int)> Aggro()
+			{
+				for(var i = 0; i < 12; i++) yield return (true, 1 + i % 4, i % 3 == 0 ? "Charge" : "", 2);
+				yield return (false, 2, "Deal 3 damage.", 2);
+				yield return (false, 1, "Deal 2 damage to a minion.", 2);
+				yield return (false, 3, "Give a minion +2/+2.", 2);
+			}
+			IEnumerable<(bool, int, string, int)> Control()
+			{
+				for(var i = 0; i < 5; i++) yield return (true, 5 + i, "Battlecry: Discover a spell.", 2);
+				for(var i = 0; i < 5; i++) yield return (false, 3 + i, "Choose One - Draw 2 cards; or gain 8 Armor.", 2);
+				for(var i = 0; i < 5; i++) yield return (false, 4, "Secret: When your opponent casts a spell, counter it.", 2);
+			}
+			var a = DeckChooser.Analyze(1, "快攻", Aggro());
+			var c = DeckChooser.Analyze(2, "控場", Control());
+			Program.Check("AI 適合度：快攻手下牌組 > 複雜控場牌組", a.Suitability > c.Suitability + 0.2,
+				$"快攻 {a.Suitability:P0}（{a.Minions} 手下，均費 {a.AvgCost:F1}）、控場 {c.Suitability:P0}（{c.Complex} 張複雜卡）");
+
+			var pick = DeckChooser.Choose(new List<DeckInfo> { c, a }, new LearningDb(), out var why);
+			Program.Check("沒有紀錄時選 AI 適合度最高的", pick.Id == 1, why);
+
+			var db = new LearningDb();
+			for(var i = 0; i < 12; i++) db.Add(new GameRecord { DeckId = 1, Won = i < 3 });   // 快攻 3勝9敗
+			for(var i = 0; i < 10; i++) db.Add(new GameRecord { DeckId = 2, Won = i < 7 });   // 控場 7勝3敗
+			pick = DeckChooser.Choose(new List<DeckInfo> { DeckChooser.Analyze(1, "快攻", Aggro()), DeckChooser.Analyze(2, "控場", Control()) }, db, out why);
+			Program.Check("有實戰紀錄時選勝率最高的", pick.Id == 2, why);
+
+			// 線上：兩副牌真實勝率 40% / 60%（適合度剛好相反），連打 200 場
+			var rng = new Random(31);
+			var live = new LearningDb();
+			int wins = 0, useGood = 0;
+			for(var i = 0; i < 200; i++)
+			{
+				var decks = new List<DeckInfo> { DeckChooser.Analyze(1, "看起來好打但其實差", Aggro()), DeckChooser.Analyze(2, "其實比較強", Control()) };
+				var d = DeckChooser.Choose(decks, live, out _);
+				var won = rng.NextDouble() < (d.Id == 2 ? 0.60 : 0.40);
+				if(won) wins++;
+				if(d.Id == 2) useGood++;
+				live.Add(new GameRecord { DeckId = d.Id, Won = won });
+			}
+			Program.Check("一直輸會換牌：最後集中用勝率高的那副", useGood >= 120, $"200 場中用較強套牌 {useGood} 場，共 {wins} 勝（只用較差套牌約 80 勝）");
 		}
 
 		private static void ImportExport(string seedPath)

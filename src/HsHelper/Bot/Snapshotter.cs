@@ -38,6 +38,8 @@ namespace HsHelper.Bot
 			s.Turn = game.GetTurnNumber();
 			s.MyClass = game.Player.CurrentClass;
 			s.OppClass = game.Opponent.CurrentClass;
+			var deck = game.CurrentSelectedDeck;
+			if(deck != null) { s.DeckId = deck.Id; s.DeckName = deck.Name ?? ""; }
 			var ps = me.GetTag(GameTag.PLAYSTATE);
 			s.Won = ps == (int)PlayState.WON;
 			try

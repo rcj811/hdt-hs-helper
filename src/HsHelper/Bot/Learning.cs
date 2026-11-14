@@ -26,6 +26,8 @@ namespace HsHelper.Bot
 		[DataMember(Order = 9)] public int FaceDmgTaken;            // 對手總共打我臉多少
 		[DataMember(Order = 10)] public int MaxBurst;               // 對手單回合最大傷害
 		[DataMember(Order = 11)] public int AoeEvents;              // 對手單回合清掉我 2 隻以上手下的次數
+		[DataMember(Order = 12)] public long DeckId;                // 我用的套牌（遊戲內的套牌編號）
+		[DataMember(Order = 13)] public string DeckName = "";
 
 		public double AggroRate => OppTurns > 0 ? FaceDmgTaken / (double)OppTurns : 0;
 		public double AoeRate => OppTurns > 0 ? AoeEvents * 5.0 / OppTurns : 0; // 每 5 回合幾次
@@ -246,6 +248,81 @@ namespace HsHelper.Bot
 			if(p.AoeRate >= 0.6) tags.Add("對手常用AOE");
 			if(p.Burst >= 8) tags.Add("對手爆發高");
 			return tags.Count > 0 ? $"{name}（{string.Join("、", tags)}）" : name;
+		}
+	}
+
+	/// <summary>套牌資訊（卡表統計 + AI 適合度）。</summary>
+	public class DeckInfo
+	{
+		public long Id;
+		public string Name = "";
+		public int Slot = -1;          // 在選套牌畫面這一頁的第幾格（0 起算）
+		public int Cards, Minions, Complex;
+		public double AvgCost;
+		public double Suitability;     // 0～1：越高越適合 AI 打
+		public int Games, Wins;
+		public double Expected;        // 預估勝率（實戰紀錄 + 適合度先驗）
+	}
+
+	/// <summary>
+	/// 自動選套牌：挑「預估勝率最高」的一副。
+	/// 預估勝率 = (實戰勝場 + 先驗 × 4) ÷ (實戰場數 + 4)，先驗由 AI 適合度換算（40%～60%）。
+	/// 打得越多越以實戰紀錄為準；某副牌一直輸，預估勝率下降，就會自動換到別副試試。
+	/// </summary>
+	public static class DeckChooser
+	{
+		private const double PriorGames = 4;
+
+		// AI 不擅長的機制（看到這些字樣就算「複雜卡」）
+		private static readonly string[] ComplexWords =
+		{
+			"discover", "choose one", "combo", "secret", "quest", "corrupt", "infuse", "forge", "outcast", "trade",
+			"shuffle", "swap", "copy", "cast it", "for each", "if you", "whenever", "spellburst", "manathirst", "excavate",
+			"colossal", "titan", "location", "dormant", "magnetic", "echo", "twinspell", "overload"
+		};
+
+		/// <summary>cards：每張牌 (是否手下, 費用, 英文敘述, 張數)。</summary>
+		public static DeckInfo Analyze(long id, string name, IEnumerable<(bool minion, int cost, string text, int count)> cards)
+		{
+			var d = new DeckInfo { Id = id, Name = name ?? "" };
+			double costSum = 0;
+			foreach(var (minion, cost, text, count) in cards)
+			{
+				d.Cards += count;
+				if(minion) d.Minions += count;
+				costSum += cost * count;
+				var t = (text ?? "").ToLowerInvariant();
+				if(ComplexWords.Any(t.Contains))
+					d.Complex += count;
+			}
+			if(d.Cards == 0)
+				return d;
+			d.AvgCost = costSum / d.Cards;
+			var minionScore = Math.Min(1, d.Minions / (d.Cards * 0.6));              // 手下佔 6 成以上滿分
+			var curveScore = Math.Max(0, Math.Min(1, 1 - (d.AvgCost - 2.5) / 4));    // 平均費用越低越好
+			var simpleScore = 1 - d.Complex / (double)d.Cards;                       // AI 看得懂的比例
+			d.Suitability = 0.4 * minionScore + 0.3 * curveScore + 0.3 * simpleScore;
+			return d;
+		}
+
+		public static DeckInfo Choose(IList<DeckInfo> decks, LearningDb db, out string reason)
+		{
+			reason = "";
+			if(decks == null || decks.Count == 0)
+				return null;
+			foreach(var d in decks)
+			{
+				var recs = db?.Games.Where(g => g.DeckId == d.Id && g.DeckId != 0).ToList() ?? new List<GameRecord>();
+				d.Games = recs.Count;
+				d.Wins = recs.Count(g => g.Won);
+				var prior = 0.40 + 0.20 * d.Suitability;
+				d.Expected = (d.Wins + prior * PriorGames) / (d.Games + PriorGames);
+			}
+			var best = decks.OrderByDescending(d => d.Expected).ThenByDescending(d => d.Suitability).First();
+			reason = best.Games > 0
+				? $"{best.Name}：{best.Wins}勝/{best.Games}場，預估勝率 {best.Expected:P0}"
+				: $"{best.Name}：還沒紀錄，AI 適合度 {best.Suitability:P0}";
+			return best;
 		}
 	}
 }
