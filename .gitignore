@@ -1,0 +1,6 @@
+bin/
+obj/
+.vs/
+hdt-ref/
+out/
+*.user
