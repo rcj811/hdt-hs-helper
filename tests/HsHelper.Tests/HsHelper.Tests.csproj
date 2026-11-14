@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 決策 AI 模擬測試：只編譯不依賴 HDT 的 Bot 程式碼，用假的牌局狀態檢查判斷是否正確 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\HsHelper\Bot\BotModel.cs" Link="Bot\BotModel.cs" />
+    <Compile Include="..\..\src\HsHelper\Bot\CardText.cs" Link="Bot\CardText.cs" />
+    <Compile Include="..\..\src\HsHelper\Bot\Planner.cs" Link="Bot\Planner.cs" />
+    <Compile Include="..\..\src\HsHelper\Bot\Search.cs" Link="Bot\Search.cs" />
+  </ItemGroup>
+</Project>

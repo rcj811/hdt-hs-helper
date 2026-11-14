@@ -1,5 +1,6 @@
 using System;
 using System.Windows.Controls;
+using HsHelper.Bot;
 using Hearthstone_Deck_Tracker.Plugins;
 using Hearthstone_Deck_Tracker.Utility.Logging;
 using ApiCore = Hearthstone_Deck_Tracker.API.Core;
@@ -14,14 +15,16 @@ namespace HsHelper
 	{
 		private StatePanel _panel;
 		private MenuItem _menuItem;
+		private readonly AutoPlayer _auto = new AutoPlayer();
+		private bool _f8WasDown;
 		private DateTime _lastRefresh = DateTime.MinValue;
 		private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(500);
 
 		public string Name => "爐石輔助 HsHelper";
-		public string Description => "即時顯示遊戲狀態（回合、手牌、牌庫、場面、戰場酒館等級）。";
+		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 1, 1);
+		public Version Version => new Version(0, 2, 0);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -35,8 +38,13 @@ namespace HsHelper
 				PositionPanel();
 				ApiCore.OverlayCanvas.SizeChanged += (s, e) => PositionPanel();
 
-				_menuItem = new MenuItem { Header = "爐石輔助：顯示／隱藏面板" };
-				_menuItem.Click += (s, e) => TogglePanel();
+				_menuItem = new MenuItem { Header = "爐石輔助" };
+				var panelItem = new MenuItem { Header = "顯示／隱藏面板" };
+				panelItem.Click += (s, e) => TogglePanel();
+				var autoItem = new MenuItem { Header = "自動出牌 開始／停止（F8）" };
+				autoItem.Click += (s, e) => _auto.Toggle();
+				_menuItem.Items.Add(panelItem);
+				_menuItem.Items.Add(autoItem);
 
 				Log.Info("HsHelper loaded");
 			}
@@ -48,6 +56,7 @@ namespace HsHelper
 
 		public void OnUnload()
 		{
+			_auto.Stop();
 			if(_panel != null)
 			{
 				ApiCore.OverlayCanvas.Children.Remove(_panel);
@@ -60,12 +69,18 @@ namespace HsHelper
 		// HDT 大約每 100ms 呼叫一次；面板每 500ms 更新就夠了
 		public void OnUpdate()
 		{
+			// F8：自動出牌開關（偵測按下的瞬間）
+			var f8 = Input.KeyDown(Input.VK_F8);
+			if(f8 && !_f8WasDown)
+				_auto.Toggle();
+			_f8WasDown = f8;
+
 			if(_panel == null || DateTime.Now - _lastRefresh < RefreshInterval)
 				return;
 			_lastRefresh = DateTime.Now;
 			try
 			{
-				_panel.Render(GameStateReader.Read());
+				_panel.Render(GameStateReader.Read(), _auto.Running, _auto.Status);
 			}
 			catch(Exception ex)
 			{

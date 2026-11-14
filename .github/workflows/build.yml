@@ -23,6 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: 決策 AI 模擬測試（失敗就不產出安裝檔）
+        run: |
+          dotnet run --project tests/HsHelper.Tests -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Fetch HDT reference assemblies (official release)
         env:
           GH_TOKEN: ${{ github.token }}
