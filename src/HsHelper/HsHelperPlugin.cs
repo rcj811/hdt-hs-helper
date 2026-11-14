@@ -1,5 +1,6 @@
 using System;
 using System.Windows.Controls;
+using System.Windows.Media;
 using HsHelper.Bot;
 using Hearthstone_Deck_Tracker.Plugins;
 using Hearthstone_Deck_Tracker.Utility.Logging;
@@ -17,6 +18,7 @@ namespace HsHelper
 		private MenuItem _menuItem;
 		private readonly AutoPlayer _auto = new AutoPlayer();
 		private bool _f8WasDown;
+		private Toast _toast;
 		private DateTime _lastRefresh = DateTime.MinValue;
 		private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(500);
 
@@ -34,6 +36,7 @@ namespace HsHelper
 				_panel = new StatePanel();
 				ApiCore.OverlayCanvas.Children.Add(_panel);
 				// 放在左下方空白處，避開 HDT 左上角的對手記牌清單
+				_toast = new Toast();
 				Canvas.SetLeft(_panel, 12);
 				PositionPanel();
 				ApiCore.OverlayCanvas.SizeChanged += (s, e) => PositionPanel();
@@ -42,7 +45,7 @@ namespace HsHelper
 				var panelItem = new MenuItem { Header = "顯示／隱藏面板" };
 				panelItem.Click += (s, e) => TogglePanel();
 				var autoItem = new MenuItem { Header = "自動出牌 開始／停止（F8）" };
-				autoItem.Click += (s, e) => _auto.Toggle();
+				autoItem.Click += (s, e) => ToggleAuto();
 				var nextItem = new MenuItem { Header = "對戰結束後自動下一場", IsCheckable = true, IsChecked = _auto.AutoNext };
 				nextItem.Click += (s, e) => _auto.AutoNext = nextItem.IsChecked;
 				_menuItem.Items.Add(panelItem);
@@ -60,6 +63,7 @@ namespace HsHelper
 		public void OnUnload()
 		{
 			_auto.Stop();
+			_toast?.Remove();
 			if(_panel != null)
 			{
 				ApiCore.OverlayCanvas.Children.Remove(_panel);
@@ -75,7 +79,7 @@ namespace HsHelper
 			// F8：自動出牌開關（偵測按下的瞬間）
 			var f8 = Input.KeyDown(Input.VK_F8);
 			if(f8 && !_f8WasDown)
-				_auto.Toggle();
+				ToggleAuto();
 			_f8WasDown = f8;
 
 			if(_panel == null || DateTime.Now - _lastRefresh < RefreshInterval)
@@ -97,6 +101,15 @@ namespace HsHelper
 				return;
 			var h = ApiCore.OverlayCanvas.ActualHeight;
 			Canvas.SetBottom(_panel, h > 0 ? h * 0.17 : 150);
+		}
+
+		private void ToggleAuto()
+		{
+			_auto.Toggle();
+			if(_auto.Running)
+				_toast?.Show("▶ 已啟動自動打牌", Color.FromRgb(0x6B, 0xE0, 0x7A));
+			else
+				_toast?.Show("■ 已停止自動打牌", Color.FromRgb(0xFF, 0x6B, 0x6B));
 		}
 
 		private void TogglePanel()
