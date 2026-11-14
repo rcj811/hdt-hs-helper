@@ -26,7 +26,7 @@ namespace HsHelper
 		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 3, 0);
+		public Version Version => new Version(0, 3, 1);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -107,7 +107,21 @@ namespace HsHelper
 		{
 			_auto.Toggle();
 			if(_auto.Running)
+			{
+				// 啟動時把 HDT 主視窗縮小，並把爐石切到最前面，避免擋住遊戲
+				try
+				{
+					var main = ApiCore.MainWindow;
+					if(main != null && main.WindowState != System.Windows.WindowState.Minimized)
+						main.WindowState = System.Windows.WindowState.Minimized;
+				}
+				catch(Exception ex)
+				{
+					Log.Error(ex);
+				}
+				Input.FocusHearthstone();
 				_toast?.Show("▶ 已啟動自動打牌", Color.FromRgb(0x6B, 0xE0, 0x7A));
+			}
 			else
 				_toast?.Show("■ 已停止自動打牌", Color.FromRgb(0xFF, 0x6B, 0x6B));
 		}

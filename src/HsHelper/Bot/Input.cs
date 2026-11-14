@@ -15,6 +15,9 @@ namespace HsHelper.Bot
 		[DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 		[DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
 		[DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT p);
+		[DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+		[DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int cmd);
+		[DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
 
 		[StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
 
@@ -27,6 +30,31 @@ namespace HsHelper.Bot
 		public static void Pause(int min, int max) { int ms; lock(Rng) ms = Rng.Next(min, max); Thread.Sleep(ms); }
 
 		public static bool KeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+		/// <summary>把爐石視窗切到最前面（若被縮小就還原）。</summary>
+		public static void FocusHearthstone()
+		{
+			try
+			{
+				foreach(var p in Process.GetProcessesByName("Hearthstone"))
+				{
+					using(p)
+					{
+						var h = p.MainWindowHandle;
+						if(h == IntPtr.Zero)
+							continue;
+						if(IsIconic(h))
+							ShowWindow(h, 9); // SW_RESTORE
+						SetForegroundWindow(h);
+						return;
+					}
+				}
+			}
+			catch(Exception)
+			{
+				// 忽略
+			}
+		}
 
 		public static bool HearthstoneInForeground()
 		{
