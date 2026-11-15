@@ -50,7 +50,7 @@ namespace HsHelper.Bot
 				var client = reflectionType.GetProperty("Client", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
 				if(client == null)
 					return st;
-				_get ??= client.GetType().GetMethod("GetAssembleState", Type.EmptyTypes);
+				_get ??= client.GetType().GetMethod("GetAssembleState", System.Type.EmptyTypes);
 				if(_get == null)
 				{
 					_unsupported = true;
