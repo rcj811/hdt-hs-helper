@@ -266,6 +266,15 @@ namespace HsHelper.Bot
 				return;
 			}
 
+			// 「組合」選擇畫面（新機制，版面跟「發現」不同）要先處理
+			var asm = Assemble.Read();
+			if(asm.Showing)
+			{
+				HandleAssemble(asm);
+				return;
+			}
+			_asmTarget = 0;
+
 			if(s.Offered.Count > 0)
 			{
 				ChooseOffered(s);
@@ -440,6 +449,59 @@ namespace HsHelper.Bot
 			Input.Click(s.MulliganConfirm[_confirmTry % s.MulliganConfirm.Count]);
 			_confirmTry++;
 			Input.Pause(2500, 3500);
+		}
+
+		// ───────── 組合 ─────────
+		private int _asmTarget, _asmTries, _asmBtn;
+
+		/// <summary>
+		/// 組合畫面：先點一個選項（費用高的卡優先、下半效果優先），讀記憶體確認選中後按「組合」。
+		/// 每一步都用記憶體狀態驗證；沒反應就換下一個位置，試太多次就停下來回報，不會亂點。
+		/// </summary>
+		private void HandleAssemble(Assemble.State asm)
+		{
+			if(asm.Target != _asmTarget)
+			{
+				_asmTarget = asm.Target;
+				_asmTries = 0;
+				_asmBtn = 0;
+				Input.Pause(800, 1300); // 等畫面動畫
+			}
+			_asmTries++;
+			if(_asmTries > 12)
+			{
+				Status = "組合畫面卡住了，請截圖回報";
+				Thread.Sleep(2000);
+				return;
+			}
+			var opts = Application.Current.Dispatcher.Invoke(new Func<List<Assemble.Option>>(() => Assemble.Options(asm)));
+			if(opts.Count == 0)
+			{
+				Status = "組合畫面：讀不到選項";
+				Thread.Sleep(1000);
+				return;
+			}
+
+			if(opts.All(o => o.EntityId != asm.Selected))
+			{
+				var ordered = opts.OrderByDescending(o => o.Cost).ThenByDescending(o => o.Half).ToList();
+				var pick = ordered[(_asmTries - 1) % ordered.Count];
+				Status = $"思考中…（組合：{pick.Name} {(pick.Half == 1 ? "上半" : "下半")}）";
+				Input.Pause(500, 2001);
+				Status = $"組合：選 {pick.Name}（{(pick.Half == 1 ? "上半" : "下半")}）";
+				Log.Info($"Assemble: pick {pick.Name} half {pick.Half}");
+				Input.Click(pick.Screen);
+				Input.Pause(900, 1400);
+				return;
+			}
+
+			var buttons = Application.Current.Dispatcher.Invoke(new Func<List<Point>>(Assemble.ButtonPoints));
+			var b = buttons[_asmBtn % buttons.Count];
+			_asmBtn++;
+			Status = "組合：按「組合」";
+			Log.Info("Assemble: press button");
+			Input.Click(b);
+			Input.Pause(1200, 1800);
 		}
 
 		// ───────── 發現／抉擇 ─────────
