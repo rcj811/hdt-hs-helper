@@ -26,7 +26,7 @@ namespace HsHelper
 		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 5, 1);
+		public Version Version => new Version(0, 6, 0);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -61,6 +61,28 @@ namespace HsHelper
 				importItem.Click += (s, e) => ImportLearning();
 				_menuItem.Items.Add(exportItem);
 				_menuItem.Items.Add(importItem);
+				_menuItem.Items.Add(new Separator());
+				var noticeItem = new MenuItem { Header = "查看新機制通知…" };
+				noticeItem.Click += (s, e) =>
+				{
+					try
+					{
+						if(!System.IO.File.Exists(MechanicMonitor.NoticePath))
+							_toast?.Show("目前沒有新機制通知", Color.FromRgb(0x6B, 0xC5, 0xF8), false);
+						else
+							System.Diagnostics.Process.Start("notepad.exe", "\"" + MechanicMonitor.NoticePath + "\"");
+					}
+					catch(Exception ex) { Log.Error(ex); }
+				};
+				_menuItem.Items.Add(noticeItem);
+
+				// 新機制偵測：通知跳在畫面中央
+				MechanicMonitor.Notice += msg => System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+					_toast?.Show("🔔 " + msg, Color.FromRgb(0xFF, 0xC8, 0x57), true, 20, 7)));
+				System.Threading.Tasks.Task.Delay(8000).ContinueWith(_ =>
+				{
+					try { MechanicMonitor.CheckOnStartup(); } catch(Exception ex) { Log.Error(ex); }
+				});
 
 				Log.Info("HsHelper loaded");
 			}
@@ -95,6 +117,7 @@ namespace HsHelper
 			if(_panel == null || DateTime.Now - _lastRefresh < RefreshInterval)
 				return;
 			_lastRefresh = DateTime.Now;
+			try { MechanicMonitor.CheckInGame(); } catch(Exception ex) { Log.Error(ex); }
 			try
 			{
 				_panel.Render(GameStateReader.Read(), _auto.Running, _auto.Status, _auto.StyleText);

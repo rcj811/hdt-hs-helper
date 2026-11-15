@@ -471,6 +471,7 @@ namespace HsHelper.Bot
 			if(_asmTries > 12)
 			{
 				Status = "組合畫面卡住了，請截圖回報";
+				MechanicMonitor.ReportStuck("組合畫面");
 				Thread.Sleep(2000);
 				return;
 			}
@@ -505,10 +506,33 @@ namespace HsHelper.Bot
 		}
 
 		// ───────── 發現／抉擇 ─────────
+		private string _offerKey = "";
+		private int _offerTries;
+
+		/// <summary>發現／抉擇／黑暗之賜：選費用最高（同費選數值高）的；點了沒反應就輪流試其他張，試太多次就通知。</summary>
 		private void ChooseOffered(Snapshot s)
 		{
-			var pick = s.Offered.OrderByDescending(o => o.Cost).ThenByDescending(o => o.Atk + o.Hp).First();
+			var key = string.Join(",", s.Offered.Select(o => o.Id));
+			if(key != _offerKey)
+			{
+				_offerKey = key;
+				_offerTries = 0;
+				Input.Pause(600, 1000); // 等選項動畫
+			}
+			_offerTries++;
+			if(_offerTries > 6)
+			{
+				Status = "選擇畫面卡住了，請截圖回報";
+				MechanicMonitor.ReportStuck($"選擇畫面（{string.Join("／", s.Offered.Select(o => o.Name))}{(s.OfferedDarkGift ? "，黑暗之賜" : "")}）");
+				Thread.Sleep(2000);
+				return;
+			}
+			var ordered = s.Offered.OrderByDescending(o => o.Cost).ThenByDescending(o => o.Atk + o.Hp).ToList();
+			var pick = ordered[(_offerTries - 1) % ordered.Count];
+			Status = $"思考中…（選擇：{pick.Name}）";
+			Input.Pause(500, 2001);
 			Status = $"選擇：{pick.Name}";
+			Log.Info($"Choice: {pick.Name} ({_offerTries})");
 			Input.Click(pick.Screen);
 			Input.Pause(1200, 1800);
 		}

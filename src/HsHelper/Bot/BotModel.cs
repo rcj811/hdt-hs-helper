@@ -63,6 +63,7 @@ namespace HsHelper.Bot
 		public List<Ent> MyBoard = new List<Ent>();
 		public List<Ent> OppBoard = new List<Ent>();
 		public List<Ent> Offered = new List<Ent>();
+		public bool OfferedDarkGift;
 		public Ent MyHero, OppHero, MyHeroPower, MyWeapon;
 		public bool HasCoin;
 		public bool Won;                                  // 對局結束時：我贏了

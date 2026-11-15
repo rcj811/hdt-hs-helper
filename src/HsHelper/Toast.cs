@@ -23,7 +23,8 @@ namespace HsHelper
 				FontWeight = FontWeights.Bold,
 				Foreground = Brushes.White,
 				FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI"),
-				TextAlignment = TextAlignment.Center
+				TextAlignment = TextAlignment.Center,
+				TextWrapping = TextWrapping.Wrap
 			};
 			_box = new Border
 			{
@@ -39,9 +40,12 @@ namespace HsHelper
 			_timer.Tick += (s, e) => { _timer.Stop(); _box.Visibility = Visibility.Collapsed; };
 		}
 
-		public void Show(string message, Color color, bool sound = true)
+		public void Show(string message, Color color, bool sound = true, double fontSize = 30, double seconds = 2.5)
 		{
 			_text.Text = message;
+			_text.FontSize = fontSize;
+			_text.MaxWidth = Math.Max(300, ApiCore.OverlayCanvas.ActualWidth * 0.6);
+			_timer.Interval = TimeSpan.FromSeconds(seconds);
 			_box.Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x15, 0x15, 0x1C));
 			_box.BorderBrush = new SolidColorBrush(color);
 			_text.Foreground = new SolidColorBrush(color);

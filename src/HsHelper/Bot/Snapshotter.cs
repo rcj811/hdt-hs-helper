@@ -120,13 +120,26 @@ namespace HsHelper.Bot
 					s.MulliganConfirm.Add(P(W / 2, H * y));
 			}
 
-			// 發現／抉擇
-			var offered = game.Player.OfferedEntities.ToList();
-			for(var i = 0; i < offered.Count; i++)
+			// 發現／抉擇／黑暗之賜：位置取自 HDT RegionDrawer.DrawDiscoverCardRegions
+			var offered = game.Player.OfferedEntities.OrderBy(e => e.ZonePosition).ToList();
+			if(offered.Count > 0)
 			{
-				var e = Convert(offered[i]);
-				e.Screen = P(W / 2 + (i - (offered.Count - 1) / 2.0) * H * 0.24, H * 0.47);
-				s.Offered.Add(e);
+				var darkGift = offered.Any(e => e.GetTag(GameTag.DARK_GIFT_ENTITY) > 0);
+				s.OfferedDarkGift = darkGift;
+				var spacing = darkGift ? 0.287 : 0.27;
+				var center = darkGift ? 0.519 : 0.53;
+				var top = darkGift ? 0.185 : 0.29;
+				var cardH = darkGift ? 0.605 : 0.39;
+				var cardW = darkGift ? 0.332 : 0.28; // 卡片寬（以畫面高度為單位）
+				var leftEdge = center - offered.Count * spacing / 2;
+				for(var i = 0; i < offered.Count; i++)
+				{
+					var e = Convert(offered[i]);
+					var cardX = leftEdge + i * spacing;
+					var x = W * ratio * cardX + W * (1 - ratio) / 2 + H * cardW / 2;
+					e.Screen = P(x, H * (top + cardH * 0.45));
+					s.Offered.Add(e);
+				}
 			}
 			return s;
 		}
