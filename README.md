@@ -57,6 +57,18 @@ Hearthstone Deck Tracker（HDT）外掛 + 一鍵安裝程式。
   - 第一次看到的卡牌粗體關鍵字
   - 自動出牌處理不了的選擇畫面
 
+### v0.7：新機制報告（給 Claude）
+
+HDT 選單「外掛 → 爐石輔助 → 匯出新機制報告（給 Claude）…」會產生一個 zip：
+
+- `report.md`：依優先順序整理的待處理項目（卡住的畫面 → 打不出來的卡 → 新關鍵字 → HDT 新功能 → 新玩法），
+  每項附卡牌資料（中英文名稱、英文敘述、遊戲標籤、AI 的理解）、出現次數、**出現時的勝率**、建議修改的檔案
+- `report-data.json`：原始資料；修好的項目把 `Resolved` 設為 true
+- `shots/`：出事當下的爐石畫面截圖（每項最多 3 張）
+- `notices.log`、`hdt-log-excerpt.txt`：通知紀錄與相關 HDT log
+
+把 zip 交給 Claude，就能直接依報告修改並加測試。
+
 ### 模擬測試
 
 `tests/HsHelper.Tests` 是決策 AI 的模擬測試（情境測試、400 個隨機局面、新舊版對戰、學習功能、匯入匯出），

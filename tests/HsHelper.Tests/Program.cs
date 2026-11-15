@@ -45,6 +45,8 @@ namespace HsHelper.Tests
 			SelfPlay(200);
 			Section("D. 學習功能（匯入匯出、從對局學習）");
 			LearningTests.Run(seedPath);
+			Section("E. 新機制報告");
+			ReportTests();
 
 			var summary = $"結果：{_pass} 通過，{_fail} 失敗";
 			Console.WriteLine();
@@ -250,6 +252,42 @@ namespace HsHelper.Tests
 				Check("解析「Deal 2 damage to all minions」→ AOE 不需目標", Spell(4, "Deal 2 damage to all minions.", "g") is var g && g.Target == TargetKind.None && g.AoE);
 				Check("解析獵人英雄技能 → 不需目標", HeroPower("Deal 2 damage to the enemy hero.").Target == TargetKind.None);
 			}
+		}
+
+		// ───────── E. 新機制報告 ─────────
+		private static void ReportTests()
+		{
+			var r = new MechReport();
+			var kw = r.Touch(MechKind.Keyword, "starship", "1.60.1", "2026-11-15 20:00");
+			MechReport.AddExample(kw, new CardExample { CardId = "GDB_001", NameZh = "測試星艦", NameEn = "Test | Ship", TextEn = "<b>Starship</b> piece.", Tags = "STARSHIP=1" });
+			MechReport.AddExample(kw, new CardExample { CardId = "GDB_001" }); // 重複不加
+			var stuck = r.Touch(MechKind.Stuck, "選擇畫面（A／B）", "1.60.1");
+			MechReport.AddDetail(stuck, "試點 6 次沒反應");
+			MechReport.AddDetail(stuck, "試點 6 次沒反應"); // 重複不加
+			r.Touch(MechKind.Keyword, "starship", "1.60.1");
+			var done = r.Touch(MechKind.Keyword, "old thing", "1.60.0");
+			done.Resolved = true;
+
+			Check("同一項目累計次數、範例與細節不重複", kw.Count == 2 && kw.Examples.Count == 1 && stuck.Details.Count == 1);
+
+			r.GameEnded(new[] { (MechKind.Keyword, "starship"), (MechKind.Keyword, "starship"), (MechKind.Stuck, "選擇畫面（A／B）") }, false);
+			r.GameEnded(new[] { (MechKind.Keyword, "starship") }, true);
+			Check("對局結束累計出現場數與勝場", kw.GamesSeen == 2 && kw.Wins == 1 && stuck.GamesSeen == 1 && stuck.Wins == 0,
+				$"關鍵字 {kw.Wins}/{kw.GamesSeen}、卡住 {stuck.Wins}/{stuck.GamesSeen}");
+
+			var md = r.ToMarkdown("0.7.0", "1.60.1", "2026-11-15 20:30");
+			var iStuck = md.IndexOf("【卡住的畫面】", StringComparison.Ordinal);
+			var iKw = md.IndexOf("【新卡牌關鍵字】", StringComparison.Ordinal);
+			Check("報告優先列出「卡住的畫面」", iStuck > 0 && iKw > iStuck);
+			Check("已處理的項目不列入待處理", !md.Contains("old thing") && md.Contains("| 新卡牌關鍵字 | 1 | 1 |"));
+			Check("報告含給 Claude 的說明、勝率與建議處理", md.Contains("給 Claude 的說明") && md.Contains("勝率 50%") && md.Contains("建議處理") && md.Contains("Bot/CardText.cs"));
+			Check("表格中的「|」會跳脫", md.Contains("Test \\| Ship"));
+
+			var back = MechReport.FromJson(r.ToJson());
+			Check("報告資料 JSON 往返不失真", back.Entries.Count == 3 && back.Entries[0].Examples[0].Tags == "STARSHIP=1" && back.Entries[2].Resolved);
+			var empty = new MechReport().ToMarkdown("0.7.0", "1.60.1");
+			Check("沒有新機制時報告顯示「目前沒有待處理」", empty.Contains("目前沒有待處理"));
+			File.WriteAllText(Path.Combine(Path.GetTempPath(), "hshelper-sample-report.md"), md);
 		}
 
 		// ───────── B. 隨機局面 ─────────

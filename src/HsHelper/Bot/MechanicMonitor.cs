@@ -7,6 +7,7 @@ using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.RegularExpressions;
 using HearthDb.Enums;
+using Hearthstone_Deck_Tracker.Hearthstone.Entities;
 using Hearthstone_Deck_Tracker.Utility.Logging;
 using ApiCore = Hearthstone_Deck_Tracker.API.Core;
 
@@ -33,6 +34,95 @@ namespace HsHelper.Bot
 
 		public static readonly string KnownPath = Path.Combine(AutoPlayer.DataDir, "known-mechanics.json");
 		public static readonly string NoticePath = Path.Combine(AutoPlayer.DataDir, "notices.log");
+
+		public static readonly string ReportDir = Path.Combine(AutoPlayer.DataDir, "reports");
+		public static readonly string ReportDataPath = Path.Combine(ReportDir, "report-data.json");
+		public static readonly string ShotsDir = Path.Combine(ReportDir, "shots");
+		private static MechReport _report;
+		private static readonly HashSet<(string, string)> _gameSeen = new HashSet<(string, string)>();
+
+		private static MechReport Report_ => _report ??= MechReport.Load(ReportDataPath);
+		private static string HdtVersion => typeof(ApiCore).Assembly.GetName().Version?.ToString() ?? "?";
+		public static string PluginVersion => typeof(MechanicMonitor).Assembly.GetName().Version?.ToString() ?? "?";
+
+		private static void SaveReport()
+		{
+			try { Report_.Save(ReportDataPath); }
+			catch(Exception ex) { Log.Warn("report save failed: " + ex.Message); }
+		}
+
+		// 這些標籤每張卡都有，報告中略過
+		private static readonly HashSet<GameTag> NoisyTags = new HashSet<GameTag>
+		{
+			GameTag.ZONE, GameTag.CONTROLLER, GameTag.ENTITY_ID, GameTag.ZONE_POSITION, GameTag.CREATOR, GameTag.PREMIUM,
+			GameTag.CARDTYPE, GameTag.COST, GameTag.ATK, GameTag.HEALTH, GameTag.RARITY, GameTag.CLASS, GameTag.CARD_SET,
+			GameTag.FACTION, GameTag.COLLECTIBLE, GameTag.NUM_TURNS_IN_PLAY, GameTag.JUST_PLAYED, GameTag.EXHAUSTED,
+			GameTag.CREATOR_DBID, GameTag.TAG_LAST_KNOWN_COST_IN_HAND, GameTag.LAUNCHPAD
+		};
+
+		/// <summary>把一張卡整理成報告用的範例（UI 執行緒）。</summary>
+		public static CardExample Example(Entity e)
+		{
+			if(e == null)
+				return null;
+			var raw = e.Card?.Data?.GetLocText(Locale.enUS) ?? "";
+			var tags = "";
+			try
+			{
+				tags = string.Join("; ", e.Tags.Where(t => t.Value != 0 && !NoisyTags.Contains(t.Key))
+					.Take(25).Select(t => $"{t.Key}={t.Value}"));
+			}
+			catch(Exception) { }
+			var probe = new Ent { Text = raw, Kind = e.IsMinion ? Kind.Minion : e.IsSpell ? Kind.Spell : Kind.Other };
+			CardText.Classify(probe);
+			return new CardExample
+			{
+				CardId = e.CardId ?? "", NameZh = e.Card?.LocalizedName ?? "", NameEn = e.Card?.Data?.GetLocName(Locale.enUS) ?? "",
+				Type = e.Card?.Type ?? "", Cost = e.GetTag(GameTag.COST), Atk = e.GetTag(GameTag.ATK), Hp = e.GetTag(GameTag.HEALTH),
+				TextEn = raw, Tags = tags,
+				AiReading = $"目標={probe.Target}，傷害={probe.Damage}，全場={(probe.AoE ? "是" : "否")}"
+			};
+		}
+
+		private static Entity FindEntity(int id)
+		{
+			var game = ApiCore.Game;
+			return game != null && game.Entities.TryGetValue(id, out var e) ? e : null;
+		}
+
+		/// <summary>擷取爐石視窗畫面（縮到 1280 寬），回傳檔名。</summary>
+		private static string Screenshot(string tag)
+		{
+			try
+			{
+				var m = Menu.Read();
+				if(!m.HasWindow)
+					return null;
+				Directory.CreateDirectory(ShotsDir);
+				var name = $"{DateTime.Now:yyyyMMdd-HHmmss}-{tag}.png";
+				using var bmp = new System.Drawing.Bitmap((int)m.Width, (int)m.Height);
+				using(var g = System.Drawing.Graphics.FromImage(bmp))
+					g.CopyFromScreen((int)m.Left, (int)m.Top, 0, 0, bmp.Size);
+				var scale = Math.Min(1.0, 1280.0 / bmp.Width);
+				using var small = new System.Drawing.Bitmap(bmp, new System.Drawing.Size((int)(bmp.Width * scale), (int)(bmp.Height * scale)));
+				small.Save(Path.Combine(ShotsDir, name), System.Drawing.Imaging.ImageFormat.Png);
+				return name;
+			}
+			catch(Exception ex)
+			{
+				Log.Warn("screenshot failed: " + ex.Message);
+				return null;
+			}
+		}
+
+		private static void AddShot(MechEntry e, string tag)
+		{
+			if(e.Screenshots.Count >= MechReport.MaxShots)
+				return;
+			var shot = Screenshot(tag);
+			if(shot != null)
+				e.Screenshots.Add(shot);
+		}
 
 		/// <summary>有新通知時觸發（外掛用它顯示畫面中央的提示）。</summary>
 		public static event Action<string> Notice;
@@ -132,6 +222,22 @@ namespace HsHelper.Bot
 					if(tagCount > k.GameTagCount && k.GameTagCount > 0)
 						messages.Add($"卡牌資料庫新增 {tagCount - k.GameTagCount} 個遊戲標籤（可能有新卡牌機制）");
 				}
+				if(!firstRun)
+				{
+					if(k.HdtVersion != hdtVersion)
+						Report_.Touch(MechKind.HdtUpdate, $"{k.HdtVersion} → {hdtVersion}", hdtVersion);
+					foreach(var mName in newMethods)
+					{
+						var e = Report_.Touch(MechKind.Reader, Pretty(mName), hdtVersion);
+						MechReport.AddDetail(e, "HearthMirror 方法：" + Describe(mName));
+					}
+					if(tagCount > k.GameTagCount && k.GameTagCount > 0)
+					{
+						var e = Report_.Touch(MechKind.HdtUpdate, $"卡牌資料庫新增 {tagCount - k.GameTagCount} 個遊戲標籤", hdtVersion);
+						MechReport.AddDetail(e, "新標籤（列舉尾端）：" + string.Join(", ", Enum.GetNames(typeof(GameTag)).Skip(k.GameTagCount).Take(30)));
+					}
+					SaveReport();
+				}
 				k.HdtVersion = hdtVersion;
 				k.GameTagCount = tagCount;
 				k.MirrorMethods = methods;
@@ -164,6 +270,23 @@ namespace HsHelper.Bot
 			["Starship"] = "星艦", ["Forge"] = "鍛造", ["Trinket"] = "飾品", ["Anomaly"] = "異象", ["Quest"] = "任務"
 		};
 
+		/// <summary>列出新讀取功能的回傳型別與欄位，方便判斷用途。</summary>
+		private static string Describe(string method)
+		{
+			try
+			{
+				var client = typeof(HearthMirror.Reflection).GetProperty("Client")?.GetValue(null);
+				var mi = client?.GetType().GetMethods().FirstOrDefault(x => x.Name == method);
+				if(mi == null) return method;
+				var rt = Nullable.GetUnderlyingType(mi.ReturnType) ?? mi.ReturnType;
+				var members = rt.GetProperties().Select(p => $"{p.Name}:{p.PropertyType.Name}")
+					.Concat(rt.GetFields().Select(f => $"{f.Name}:{f.FieldType.Name}")).Take(20);
+				var args = string.Join(", ", mi.GetParameters().Select(p => p.ParameterType.Name + " " + p.Name));
+				return $"{method}({args}) → {rt.Name} {{ {string.Join(", ", members)} }}";
+			}
+			catch(Exception) { return method; }
+		}
+
 		private static string Pretty(string method)
 		{
 			var name = method.StartsWith("Get") ? method.Substring(3) : method;
@@ -188,6 +311,7 @@ namespace HsHelper.Bot
 			{
 				var k = Load();
 				var changed = false;
+				var reportChanged = false;
 
 				var gameType = $"{game.CurrentGameType}/{game.CurrentFormatType}";
 				if(!k.GameTypes.Contains(gameType))
@@ -196,7 +320,13 @@ namespace HsHelper.Bot
 					changed = true;
 					var supported = !game.IsBattlegroundsMatch && !game.IsMercenariesMatch;
 					if(k.GameTypes.Count > 1) // 第一次記錄的不通知
+					{
 						Report($"第一次遇到的玩法：{gameType}，自動出牌{(supported ? "支援" : "不支援（只會顯示面板）")}");
+						var e = Report_.Touch(MechKind.Mode, gameType, HdtVersion);
+						MechReport.AddDetail(e, $"自動出牌：{(supported ? "支援" : "不支援")}；場景 {game.CurrentMode}");
+						AddShot(e, "mode");
+						SaveReport();
+					}
 				}
 
 				try
@@ -210,11 +340,33 @@ namespace HsHelper.Bot
 						foreach(Match m in Bold.Matches(text))
 						{
 							var kw = Normalize(m.Groups[1].Value);
-							if(kw.Length < 3 || k.Keywords.Contains(kw))
+							if(kw.Length < 3)
 								continue;
-							k.Keywords.Add(kw);
-							changed = true;
-							Report($"第一次看到的卡牌關鍵字：「{m.Groups[1].Value.Trim()}」（{e.Card?.LocalizedName}）— AI 先用費用估值處理，有問題請回報");
+							if(!k.Keywords.Contains(kw))
+							{
+								k.Keywords.Add(kw);
+								changed = true;
+								Report($"第一次看到的卡牌關鍵字：「{m.Groups[1].Value.Trim()}」（{e.Card?.LocalizedName}）— AI 先用費用估值處理，已記入新機制報告");
+								var entry = Report_.Touch(MechKind.Keyword, kw, HdtVersion);
+								MechReport.AddExample(entry, Example(e));
+								AddShot(entry, "keyword");
+								reportChanged = true;
+							}
+							else
+							{
+								// 已記錄的新關鍵字：累計範例卡與出現的對局
+								var entry = Report_.Entries.FirstOrDefault(x => x.Kind == MechKind.Keyword && x.Key == kw);
+								if(entry != null)
+								{
+									if(_gameSeen.Add((entry.Kind, entry.Key)))
+										reportChanged = true;
+									if(entry.Examples.All(x => x.CardId != e.CardId) && entry.Examples.Count < MechReport.MaxExamples)
+									{
+										MechReport.AddExample(entry, Example(e));
+										reportChanged = true;
+									}
+								}
+							}
 						}
 					}
 				}
@@ -224,6 +376,8 @@ namespace HsHelper.Bot
 				}
 				if(changed)
 					Save();
+				if(reportChanged)
+					SaveReport();
 			}
 		}
 
@@ -236,12 +390,122 @@ namespace HsHelper.Bot
 		/// <summary>自動出牌遇到處理不了的畫面時呼叫（同一個情況只通知一次）。</summary>
 		private static readonly HashSet<string> _reported = new HashSet<string>();
 
-		public static void ReportStuck(string what)
+		/// <summary>從背景執行緒呼叫：在 UI 執行緒整理卡牌資料。</summary>
+		private static T OnUi<T>(Func<T> f)
 		{
+			try { return System.Windows.Application.Current.Dispatcher.Invoke(f); }
+			catch(Exception) { return default; }
+		}
+
+		public static void ReportStuck(string what, IEnumerable<int> entityIds = null, string detail = null)
+		{
+			var ids = entityIds?.ToList() ?? new List<int>();
+			var examples = OnUi(() => ids.Select(id => Example(FindEntity(id))).Where(x => x != null).ToList()) ?? new List<CardExample>();
 			lock(Lock)
+			{
+				var e = Report_.Touch(MechKind.Stuck, what, HdtVersion);
+				MechReport.AddDetail(e, detail);
+				foreach(var ex in examples)
+					MechReport.AddExample(e, ex);
+				AddShot(e, "stuck");
+				_gameSeen.Add((e.Kind, e.Key));
+				SaveReport();
 				if(!_reported.Add(what))
 					return;
-			Report($"自動出牌處理不了：{what}（請截圖回報，會在下一版支援）");
+			}
+			Report($"自動出牌處理不了：{what}（已記入新機制報告，可從選單匯出給 Claude）");
+		}
+
+		/// <summary>出牌／攻擊／英雄技能沒成功：記錄卡牌資料（同一張卡累計次數）。</summary>
+		public static void PlayFailure(int entityId, string what, string reason)
+		{
+			var ex = OnUi(() => Example(FindEntity(entityId)));
+			lock(Lock)
+			{
+				var key = ex != null && !string.IsNullOrEmpty(ex.CardId) ? $"{what}（{ex.CardId}）" : what;
+				var e = Report_.Touch(MechKind.PlayFail, key, HdtVersion);
+				MechReport.AddDetail(e, reason);
+				MechReport.AddExample(e, ex);
+				if(e.Count <= 2)
+					AddShot(e, "playfail");
+				_gameSeen.Add((e.Kind, e.Key));
+				SaveReport();
+			}
+		}
+
+		public static void GameEnded(bool won)
+		{
+			lock(Lock)
+			{
+				if(_gameSeen.Count > 0)
+				{
+					Report_.GameEnded(_gameSeen, won);
+					SaveReport();
+				}
+				_gameSeen.Clear();
+			}
+		}
+
+		public static int PendingCount
+		{
+			get { lock(Lock) return Report_.Entries.Count(e => !e.Resolved && e.Kind != MechKind.HdtUpdate); }
+		}
+
+		/// <summary>匯出給 Claude 的報告包：report.md、report-data.json、notices.log、截圖、相關 HDT log。</summary>
+		public static void ExportZip(string zipPath)
+		{
+			string md, json;
+			lock(Lock)
+			{
+				md = Report_.ToMarkdown(PluginVersion, HdtVersion);
+				json = Report_.ToJson();
+			}
+			var tmp = Path.Combine(Path.GetTempPath(), "hshelper-report-" + Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(tmp);
+			try
+			{
+				File.WriteAllText(Path.Combine(tmp, "report.md"), md, Encoding.UTF8);
+				File.WriteAllText(Path.Combine(tmp, "report-data.json"), json, Encoding.UTF8);
+				if(File.Exists(NoticePath))
+					File.Copy(NoticePath, Path.Combine(tmp, "notices.log"));
+				if(Directory.Exists(ShotsDir))
+				{
+					var shots = Path.Combine(tmp, "shots");
+					Directory.CreateDirectory(shots);
+					foreach(var f in Directory.GetFiles(ShotsDir, "*.png"))
+						File.Copy(f, Path.Combine(shots, Path.GetFileName(f)));
+				}
+				File.WriteAllText(Path.Combine(tmp, "hdt-log-excerpt.txt"), HdtLogExcerpt(), Encoding.UTF8);
+				if(File.Exists(zipPath))
+					File.Delete(zipPath);
+				System.IO.Compression.ZipFile.CreateFromDirectory(tmp, zipPath);
+			}
+			finally
+			{
+				try { Directory.Delete(tmp, true); } catch(Exception) { }
+			}
+		}
+
+		/// <summary>HDT log 中跟自動出牌有關的最後 400 行。</summary>
+		private static string HdtLogExcerpt()
+		{
+			try
+			{
+				var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HearthstoneDeckTracker", "Logs");
+				var file = new DirectoryInfo(dir).GetFiles("*.txt").OrderByDescending(f => f.LastWriteTime).FirstOrDefault();
+				if(file == null)
+					return "(找不到 HDT log)";
+				string[] lines;
+				using(var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+				using(var sr = new StreamReader(fs))
+					lines = sr.ReadToEnd().Split('\n');
+				var keys = new[] { "HsHelper", "Action:", "Plan:", "Notice:", "Choice:", "Assemble", "Deck:", "Learning", "failed", "Play failed", "Exception" };
+				return string.Join("\n", lines.Where(l => keys.Any(l.Contains)).Reverse().Take(400).Reverse());
+			}
+			catch(Exception ex)
+			{
+				return "(讀取 HDT log 失敗：" + ex.Message + ")";
+			}
 		}
 	}
 }

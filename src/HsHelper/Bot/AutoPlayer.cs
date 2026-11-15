@@ -140,6 +140,7 @@ namespace HsHelper.Bot
 					Db.Save(DbPath);
 				}
 				Log.Info($"Learning: recorded {(rec.Won ? "WIN" : "LOSS")} vs {rec.OppClass}, style {_style}");
+				MechanicMonitor.GameEnded(rec.Won);
 			}
 			catch(Exception ex)
 			{
@@ -471,7 +472,8 @@ namespace HsHelper.Bot
 			if(_asmTries > 12)
 			{
 				Status = "組合畫面卡住了，請截圖回報";
-				MechanicMonitor.ReportStuck("組合畫面");
+				MechanicMonitor.ReportStuck("組合畫面", asm.Choices.Concat(new[] { asm.Target }),
+					$"組合畫面試了 12 次：目前選擇 {asm.Selected}，選項 {string.Join(",", asm.Choices)}");
 				Thread.Sleep(2000);
 				return;
 			}
@@ -523,7 +525,8 @@ namespace HsHelper.Bot
 			if(_offerTries > 6)
 			{
 				Status = "選擇畫面卡住了，請截圖回報";
-				MechanicMonitor.ReportStuck($"選擇畫面（{string.Join("／", s.Offered.Select(o => o.Name))}{(s.OfferedDarkGift ? "，黑暗之賜" : "")}）");
+				MechanicMonitor.ReportStuck($"選擇畫面（{string.Join("／", s.Offered.Select(o => o.Name))}{(s.OfferedDarkGift ? "，黑暗之賜" : "")}）",
+					s.Offered.Select(o => o.Id), $"選項 {s.Offered.Count} 個，試點 6 次都沒反應；點擊位置：{string.Join(" ", s.Offered.Select(o => $"({o.Screen.X:F0},{o.Screen.Y:F0})"))}");
 				Thread.Sleep(2000);
 				return;
 			}
@@ -610,6 +613,9 @@ namespace HsHelper.Bot
 			Input.Pause(300, 500);
 			_skip.Add(c.Id);
 			Log.Info($"Play failed, skip {c.Name} this turn");
+			MechanicMonitor.PlayFailure(c.Id, c.Name,
+				$"出牌失敗：拖曳{(c.Kind == Kind.Minion ? "到板面" : a.Target != null ? $"到目標「{a.Target.Name}」" : "到場中")}後仍在手上" +
+				$"（AI 判斷：類型 {c.Kind}、目標 {c.Target}、費用 {c.Cost}、當時法力 {s.Mana}）");
 		}
 
 		private void HeroPower(Snapshot s, BotAction a)
@@ -625,6 +631,7 @@ namespace HsHelper.Bot
 				Input.RightClick();
 				_skip.Add(hp.Id);
 				Log.Info("Hero power failed, skip this turn");
+				MechanicMonitor.PlayFailure(hp.Id, "英雄技能 " + hp.Name, $"英雄技能使用失敗（AI 判斷目標 {hp.Target}，選的目標 {a.Target?.Name ?? "無"}）");
 			}
 		}
 
@@ -643,6 +650,7 @@ namespace HsHelper.Bot
 				Input.RightClick();
 				_skip.Add(src.Id);
 				Log.Info($"Attack failed, skip {src.Name} this turn");
+				MechanicMonitor.PlayFailure(src.Id, "攻擊 " + src.Name, $"攻擊「{a.Target.Name}」沒成功（攻擊者 {src.Atk}/{src.Hp}，可能有不能攻擊的新機制或位置偏差）");
 			}
 			else
 				Input.Pause(600, 1000); // 攻擊動畫
