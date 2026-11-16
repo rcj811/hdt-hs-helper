@@ -60,7 +60,7 @@ namespace HsHelper.Tests
 			Section("G. 實戰觀察學習看不懂的牌（v0.9.4）");
 			LessonTests();
 			Section("H. 手牌／牌庫能力、職業卡牌模組（v0.9.5）");
-			ModuleTests();
+			ModuleTests(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(seedPath)) ?? ".", "class-threats.json"));
 
 			var summary = $"結果：{_pass} 通過，{_fail} 失敗";
 			Console.WriteLine();
@@ -175,7 +175,7 @@ namespace HsHelper.Tests
 			}
 		}
 
-		private static void ModuleTests()
+		private static void ModuleTests(string path)
 		{
 			// 1. 手牌／牌庫能力統計
 			{
@@ -191,7 +191,6 @@ namespace HsHelper.Tests
 			}
 			// 2. 職業模組（內建資料）
 			{
-				var path = "../../src/HsHelper/Resources/class-threats.json";
 				Check("職業模組檔存在", System.IO.File.Exists(path), path);
 				if(System.IO.File.Exists(path))
 				{
