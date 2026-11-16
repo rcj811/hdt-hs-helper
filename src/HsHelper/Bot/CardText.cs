@@ -45,11 +45,21 @@ namespace HsHelper.Bot
 		// 加水晶：Innervate / Counterfeit Coin「Gain 1 Mana Crystal this turn only」、Horn of Winter「Refresh 2 Mana Crystals」
 		private static readonly Regex ManaGainRe = new Regex(@"\b(gain|refresh) (\d+|a|an) mana crystals?( this turn only)?", O);
 
+		// 棄牌：末日守衛「Discard two random cards」、靈魂之火「Discard a random card」；排除「每當你棄掉…」這種觸發
+		private static readonly Regex DiscardRe = new Regex(@"(?<!you |whenever |when |if you )\bdiscard (your hand|(a|an|one|two|three|\d+)( random| your (lowest|highest)-cost)? cards?)", O);
+
 		public static void Classify(Ent e, bool isHeroPower = false)
 		{
 			var t = e.Text = Regex.Replace(Clean.Replace((e.Text ?? "").Replace("[x]", " "), "").Replace("_", " "), @"\s+", " ").Trim();
 			var dm = DealDamage.Match(t);
 			e.Damage = dm.Success ? int.Parse(dm.Groups[1].Value) : 0;
+			var dc = DiscardRe.Match(t);
+			if(dc.Success)
+			{
+				var v = dc.Groups[2].Value.ToLowerInvariant();
+				e.Discard = dc.Groups[1].Value.ToLowerInvariant() == "your hand" ? 10
+					: v == "a" || v == "an" || v == "one" ? 1 : v == "two" ? 2 : v == "three" ? 3 : int.TryParse(v, out var dn) ? dn : 1;
+			}
 			var mg = ManaGainRe.Match(t);
 			if(mg.Success && e.Kind == Kind.Spell)
 			{

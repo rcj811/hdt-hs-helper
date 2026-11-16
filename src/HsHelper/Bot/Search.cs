@@ -263,6 +263,18 @@ namespace HsHelper.Bot
 				n.Mana -= c.Cost;
 				n.ManaSpent += c.Cost;
 				n.Moves.Add(new Move { Type = ActionType.Play, Source = c.Id, Target = target });
+				if(c.Discard > 0 && n.Hand.Count > 0)
+				{
+					// 棄牌（v0.9.3 實戰：連下兩張末日守衛棄掉 4 張，後期沒牌輸掉）
+					// 悲觀假設棄掉最貴的牌（之後不能再規劃打出它）；評分本來就會少一張手牌的分，再加扣那張牌本身的價值
+					// → 搜尋自然會「先把別的牌打完，最後才下棄牌的牌」；手牌空了再下就不扣分
+					var k = Math.Min(c.Discard, n.Hand.Count);
+					foreach(var x in n.Hand.OrderByDescending(h => h.Cost).Take(k).ToList())
+					{
+						n.Hand.Remove(x);
+						n.Bonus -= 3 + x.Cost * 1.5;
+					}
+				}
 				return n;
 			}
 
@@ -347,6 +359,12 @@ namespace HsHelper.Bot
 					var isDestroy = c.Damage == 0;
 					foreach(var m in n.Op) Hit(m, isDestroy ? 999 : c.Damage);
 					if(!enemyOnly) foreach(var m in n.My) Hit(m, isDestroy ? 999 : c.Damage);
+					// 「所有角色」連英雄一起打（地獄烈焰會打到自己的英雄）
+					if(!isDestroy && text.IndexOf("characters", StringComparison.OrdinalIgnoreCase) >= 0)
+					{
+						DamageHero(n.Opp, c.Damage);
+						if(!enemyOnly) DamageHero(n.Me, c.Damage);
+					}
 					RemoveDead(n);
 				}
 				else

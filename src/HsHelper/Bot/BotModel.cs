@@ -37,6 +37,7 @@ namespace HsHelper.Bot
 		public TargetKind Target;
 		public int Damage;            // 傷害類法術的傷害值（看不出來為 0）
 		public bool AoE;              // 會打到全場
+		public int Discard;           // 出牌時棄掉幾張手牌（末日守衛 2、靈魂之火 1、「棄掉你的手牌」10）
 		public int ManaGain;          // 「獲得 N 個法力水晶（僅限本回合）」之類的加水晶法術（啟動、偽造的幸運幣）
 		public bool ManaRefresh;      // 「重置 N 個法力水晶」：只能補回已用掉的
 		public Point Screen;          // 螢幕座標（實體像素）

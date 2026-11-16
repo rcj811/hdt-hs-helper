@@ -312,6 +312,33 @@ namespace HsHelper.Tests
 				Check("先祖治療 → 友方手下", Spell(0, "Restore a minion to full Health and give it <b>Taunt</b>.", "先祖治療").Target == TargetKind.FriendlyMinion);
 				Check("突變（後半有 random）→ 友方手下", Spell(0, "Transform a friendly minion into a random one that costs (1) more.", "突變").Target == TargetKind.FriendlyMinion);
 			}
+			// 16e. 實戰輸給獵人：連下兩張末日守衛（棄 2 張）把手牌棄光
+			{
+				var dg = Card(5, 5, 7, "末日守衛", charge: true);
+				dg.Text = "<b>Charge</b>. <b>Battlecry:</b> Discard two random cards."; CardText.Classify(dg);
+				Check("末日守衛：讀出棄 2 張", dg.Discard == 2);
+				var sf = Spell(1, "Deal $4 damage. Discard a random card.", "靈魂之火");
+				Check("靈魂之火：讀出棄 1 張", sf.Discard == 1);
+				Check("「每當你棄牌」不是棄牌", Spell(1, "Whenever you discard a card, draw a card.", "觸發").Discard == 0);
+				var a = Card(2, 2, 3, "2費2/3a"); var b = Card(2, 3, 2, "2費3/2b");
+				var s = Board(9, new Ent[0], new[] { Minion(3, 3) }, new[] { dg, a, b });
+				var act = Decide(s, out var plan);
+				Check("先把其他牌打完，最後才下末日守衛", act?.Source?.Id != dg.Id && plan.Contains("2費2/3a") && plan.Contains("2費3/2b"), plan);
+				var dg2 = Card(5, 5, 7, "末日守衛2", charge: true); dg2.Text = dg.Text; CardText.Classify(dg2);
+				var c3 = Card(3, 3, 4, "3費3/4"); var c4 = Card(4, 4, 5, "4費4/5");
+				var s2 = Board(10, new Ent[0], new[] { Minion(2, 3) }, new[] { dg, dg2, c3, c4 }, oppHp: 30);
+				Decide(s2, out var p2);
+				Check("兩張末日守衛：先下別的牌，不會連下兩張把手牌棄光", p2.IndexOf("3費3/4") >= 0 && p2.IndexOf("4費4/5") >= 0
+					&& !(p2.Contains("打出 末日守衛 ") && p2.Contains("打出 末日守衛2")), p2);
+			}
+			// 16f. 地獄烈焰會打到自己英雄：血量低時不自殺
+			{
+				var hf = Spell(4, "Deal $3 damage to ALL characters.", "地獄烈焰");
+				var s = Board(4, new Ent[0], new[] { Minion(3, 2), Minion(2, 2) }, new[] { hf }, oppHp: 30);
+				s.MyHero.Hp = 3;
+				Decide(s, out var plan);
+				Check("自己剩 3 血不放地獄烈焰", !plan.Contains("地獄烈焰"), string.IsNullOrEmpty(plan) ? "（結束回合）" : plan);
+			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{
 				var silence = Spell(1, "<b>Silence</b> a minion.", "沉默術");
