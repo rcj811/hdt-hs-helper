@@ -47,6 +47,8 @@ namespace HsHelper.Tests
 			LearningTests.Run(seedPath);
 			Section("E. 新機制報告");
 			ReportTests();
+			Section("F. 動作成功判斷（v0.7.0 實測報告：13 張牌被誤判打不出來）");
+			VerifyTests();
 
 			var summary = $"結果：{_pass} 通過，{_fail} 失敗";
 			Console.WriteLine();
@@ -252,6 +254,36 @@ namespace HsHelper.Tests
 				Check("解析「Deal 2 damage to all minions」→ AOE 不需目標", Spell(4, "Deal 2 damage to all minions.", "g") is var g && g.Target == TargetKind.None && g.AoE);
 				Check("解析獵人英雄技能 → 不需目標", HeroPower("Deal 2 damage to the enemy hero.").Target == TargetKind.None);
 			}
+		}
+
+		// ───────── F. 動作成功判斷 ─────────
+		private static void VerifyTests()
+		{
+			var croc = Card(2, 2, 3, "淡水鱷");
+			var other = Card(1, 1, 1);
+			var before = Board(4, new Ent[0], new Ent[0], new[] { croc, other });
+
+			// 實測情況：牌已經在場上，但 HDT 的手牌資料還沒更新
+			var lagging = Board(4, new[] { croc }, new Ent[0], new[] { croc, other });
+			Check("牌已在場上、手牌資料還沒更新 → 算成功", Verify.PlayResolved(before, lagging, croc));
+
+			var manaSpent = Board(2, new Ent[0], new Ent[0], new[] { croc, other });
+			Check("法力已扣 → 算成功", Verify.PlayResolved(before, manaSpent, croc));
+
+			var left = Board(2, new[] { croc }, new Ent[0], new[] { other });
+			Check("牌離開手牌 → 算成功", Verify.PlayResolved(before, left, croc));
+
+			var nothing = Board(4, new Ent[0], new Ent[0], new[] { croc, other });
+			Check("什麼都沒變 → 算失敗（才會取消並回報）", !Verify.PlayResolved(before, nothing, croc));
+
+			var otherPlayed = Board(3, new[] { other }, new Ent[0], new[] { croc });
+			Check("扣的是別張牌的法力（不夠扣這張）→ 不誤判", !Verify.PlayResolved(before, otherPlayed, croc));
+
+			var hp = HeroPower("Deal 2 damage to the enemy hero.");
+			var hpBefore = Board(2, new Ent[0], new Ent[0], heroPower: hp);
+			var hpAfter = Board(0, new Ent[0], new Ent[0], heroPower: hp);
+			Check("英雄技能：法力已扣 → 算成功", Verify.HeroPowerResolved(hpBefore, hpAfter));
+			Check("英雄技能：沒變化 → 算失敗", !Verify.HeroPowerResolved(hpBefore, Board(2, new Ent[0], new Ent[0], heroPower: hp)));
 		}
 
 		// ───────── E. 新機制報告 ─────────

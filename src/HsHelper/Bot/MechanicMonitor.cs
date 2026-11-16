@@ -141,7 +141,7 @@ namespace HsHelper.Bot
 			"excavate", "titan", "colossal", "quickdraw", "dredge", "finale", "elusive", "immune", "counter", "recruit",
 			"lackey", "invoke", "sidequest", "questline", "quest", "start of game", "corpse", "corpses", "miniaturize",
 			"gigantify", "tourist", "starship", "imbue", "kindred", "herald", "assemble", "dark gift", "outcast",
-			"armor", "attack", "health", "legendary", "spellburst", "combo", "objective", "location", "silenced"
+			"armor", "attack", "health", "legendary", "hero power", "passive", "battlecry", "deathrattle", "spellburst", "combo", "objective", "location", "silenced"
 		};
 
 		private static Known Load()
@@ -238,6 +238,26 @@ namespace HsHelper.Bot
 					}
 					SaveReport();
 				}
+				// v0.7.1：舊版「出牌後仍在手上」是確認太早造成的誤判，「Hero Power」也不是新機制 → 自動標記已處理
+				if(!k.Keywords.Contains("hero power")) k.Keywords.Add("hero power");
+				var migrated = 0;
+				foreach(var e in Report_.Entries.Where(e => !e.Resolved))
+				{
+					var falsePlayFail = e.Kind == MechKind.PlayFail && e.Details.Count > 0 && e.Details.All(d => d.Contains("後仍在手上"))
+					                    && string.CompareOrdinal(e.LastSeen, "2026-11-16 12:00") < 0;
+					var heroPowerKw = e.Kind == MechKind.Keyword && e.Key == "hero power";
+					if(falsePlayFail || heroPowerKw)
+					{
+						e.Resolved = true;
+						migrated++;
+					}
+				}
+				if(migrated > 0)
+				{
+					SaveReport();
+					messages.Add($"已修正：舊版報告中 {migrated} 項「打不出來的卡／新關鍵字」是誤判（確認太早），已標記為已處理");
+				}
+
 				k.HdtVersion = hdtVersion;
 				k.GameTagCount = tagCount;
 				k.MirrorMethods = methods;

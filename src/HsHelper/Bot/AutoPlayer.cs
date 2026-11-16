@@ -585,30 +585,39 @@ namespace HsHelper.Bot
 			else
 				Input.Drag(c.Screen, s.BoardCenter);
 
-			var left = WaitUntil(x => x.Hand.All(h => h.Id != c.Id), 1600);
-			if(left)
+			// 等結算：牌離開手牌／出現在場上／法力已扣，任一成立就算成功（HDT log 有延遲）
+			var before = s;
+			bool Done(Snapshot x) => Verify.PlayResolved(before, x, c);
+			var battlecry = c.Kind == Kind.Minion && (c.Target != TargetKind.None
+				|| (c.Text ?? "").IndexOf("battlecry", StringComparison.OrdinalIgnoreCase) >= 0);
+			if(WaitUntil(Done, battlecry ? 2500 : 5000))
 			{
 				Input.Pause(700, 1100);
 				return;
 			}
 
-			// 還在手上：可能是需要目標的戰吼，或拖曳失敗
-			if(c.Kind == Kind.Minion)
+			// 有戰吼的手下還沒結算：多半是在等選目標
+			if(battlecry)
 			{
 				var now = Read();
-				var kind = c.Target != TargetKind.None ? c.Target : TargetKind.EnemyAny;
+				var kind = c.Target != TargetKind.None && c.Target != TargetKind.Unknown ? c.Target : TargetKind.EnemyAny;
 				var t = Planner.PickTarget(now, c, kind);
-				if(t != null)
+				var target = t != null ? FindById(now, t.Id) : null;
+				if(target != null)
 				{
-					var target = FindById(now, t.Id);
-					if(target != null)
-					{
-						Input.Click(target.Screen);
-						if(WaitUntil(x => x.Hand.All(h => h.Id != c.Id), 1800))
-							return;
-					}
+					Input.Click(target.Screen);
+					if(WaitUntil(Done, 4000))
+						return;
 				}
+				else if(WaitUntil(Done, 2500))
+					return;
 			}
+
+			// 最後再確認一次，避免誤判
+			Thread.Sleep(1500);
+			if(Done(Read()))
+				return;
+
 			Input.RightClick(); // 取消
 			Input.Pause(300, 500);
 			_skip.Add(c.Id);
@@ -625,7 +634,8 @@ namespace HsHelper.Bot
 				Input.Drag(hp.Screen, a.Target.Screen);
 			else
 				Input.Click(hp.Screen);
-			var ok = WaitUntil(x => x.MyHeroPower == null || x.MyHeroPower.Exhausted, 1800);
+			var before = s;
+			var ok = WaitUntil(x => Verify.HeroPowerResolved(before, x), 4000);
 			if(!ok)
 			{
 				Input.RightClick();
@@ -644,7 +654,7 @@ namespace HsHelper.Bot
 			{
 				var me = FindById(x, src.Id);
 				return me == null || me.AttacksThisTurn > before;
-			}, 2500);
+			}, 4500);
 			if(!ok)
 			{
 				Input.RightClick();
