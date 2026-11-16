@@ -62,6 +62,26 @@ namespace HsHelper.Bot
 			return st;
 		}
 
+		/// <summary>
+		/// 翻頁箭頭的螢幕座標（依使用者截圖量測，以畫面高度為單位、相對畫面中心）：
+		/// 右箭頭 (+0.156H, 0.486H)、左箭頭 (−0.630H, 0.486H)。在 UI 執行緒呼叫。
+		/// </summary>
+		public static Point? ArrowPoint(bool right)
+		{
+			try
+			{
+				var ow = ApiCore.OverlayWindow;
+				double W = ow.Width, H = ow.Height;
+				if(double.IsNaN(W) || W < 100 || H < 100)
+					return null;
+				return ow.PointToScreen(new Point(W / 2 + H * (right ? 0.156 : -0.630), H * 0.486));
+			}
+			catch(Exception)
+			{
+				return null;
+			}
+		}
+
 		/// <summary>第 slot 格套牌的螢幕座標（在 UI 執行緒呼叫）。</summary>
 		public static Point? SlotPoint(int slot)
 		{

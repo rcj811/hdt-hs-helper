@@ -154,6 +154,7 @@ namespace HsHelper.Bot
 		/// <summary>開始下一場前，自動選預估勝率最高的套牌。</summary>
 		public bool AutoDeck { get; set; } = true;
 		private bool _deckReady;
+		private readonly DeckNavigator _navigator = new DeckNavigator();
 		private long _menuDeckId;
 		private string _menuDeckName = "";
 		private int _deckClickTries;
@@ -388,48 +389,20 @@ namespace HsHelper.Bot
 				Thread.Sleep(1500);
 				return;
 			}
-			// 自動選套牌：挑預估勝率最高的，點選後下一輪再讀一次確認
+			// 自動選套牌：從「所有頁」挑預估勝率最高的，必要時翻頁，點選後讀記憶體確認
 			if(AutoDeck && !_deckReady)
 			{
-				var page = DeckPicker.Read();
-				if(!page.Ok)
-					_deckReady = true; // 讀不到（例如不在選套牌畫面）就用目前的
-				else
-				{
-					DeckInfo best;
-					string reason;
-					lock(DbLock)
-						best = DeckChooser.Choose(page.Decks, Db, out reason);
-					var sel = page.Decks.FirstOrDefault(d => d.Id == page.Selected);
-					if(sel != null) { _menuDeckId = sel.Id; _menuDeckName = sel.Name; }
-					if(best == null || page.Selected == best.Id)
-					{
-						_deckReady = true;
-						_deckText = reason;
-						Status = "已選套牌：" + reason;
-						Log.Info("Deck: " + reason);
-					}
-					else if(_deckClickTries >= 3)
-					{
-						_deckReady = true;
-						Status = "選套牌沒成功，使用目前的套牌";
-					}
-					else
-					{
-						var pt = Application.Current.Dispatcher.Invoke(new Func<Point?>(() => DeckPicker.SlotPoint(best.Slot)));
-						if(pt == null)
-						{
-							_deckReady = true;
-							return;
-						}
-						Status = "選套牌：" + reason;
-						Input.Pause(800, 1500);
-						Input.Click(pt.Value);
-						_deckClickTries++;
-						Input.Pause(1500, 2200);
-						return;
-					}
-				}
+				Status = "選套牌中…";
+				Input.Pause(800, 1300); // 等選套牌畫面動畫
+				var msg = _navigator.EnsureBest(Db, DbLock, out _, out var chosen);
+				var now = DeckPicker.Read();
+				var sel = now.Decks.FirstOrDefault(d => d.Id == now.Selected) ?? chosen;
+				if(sel != null) { _menuDeckId = sel.Id; _menuDeckName = sel.Name; }
+				_deckReady = true;
+				_deckText = msg;
+				Status = "已選套牌：" + msg;
+				Log.Info("Deck: " + msg);
+				Input.Pause(600, 1000);
 			}
 
 			// 每次按完至少等 6 秒（可能是先關掉獎勵視窗，或正在進入對戰）

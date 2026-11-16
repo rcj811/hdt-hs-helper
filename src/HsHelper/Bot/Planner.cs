@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -274,7 +275,9 @@ namespace HsHelper.Bot
 					// 消滅／變形等：留給有價值的目標
 					return enemies.Where(e => e.Value >= 5).OrderByDescending(e => e.Value).FirstOrDefault();
 				case TargetKind.FriendlyMinion:
-					return friends.OrderByDescending(m => m.Value).FirstOrDefault();
+					// 「消滅／犧牲一個友方手下」挑最弱的；增益挑最強的
+					var harmful = Regex.IsMatch(card.Text ?? "", @"\b(destroy|sacrifice|deal|transform|silence|return)\b", RegexOptions.IgnoreCase);
+					return harmful ? friends.OrderBy(m => m.Value).FirstOrDefault() : friends.OrderByDescending(m => m.Value).FirstOrDefault();
 				case TargetKind.FriendlyAny:
 					var hurt = friends.Where(m => m.Hp < 3).OrderByDescending(m => m.Value).FirstOrDefault();
 					return s.MyHero != null && s.MyHero.Hp < 25 ? s.MyHero : hurt ?? s.MyHero;

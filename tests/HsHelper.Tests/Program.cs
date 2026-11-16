@@ -26,6 +26,11 @@ namespace HsHelper.Tests
 				Tuner.Run(args.Length > 1 ? int.Parse(args[1]) : 30);
 				return 0;
 			}
+			if(args.Length > 1 && args[0] == "--scan")
+			{
+				CardScan.Run(args[1]);
+				return 0;
+			}
 			if(args.Length > 0 && args[0] == "--exp")
 			{
 				LearningTests.Experiment(args.Length > 1 ? int.Parse(args[1]) : 300);
@@ -98,7 +103,8 @@ namespace HsHelper.Tests
 
 		private static Ent Spell(int cost, string text, string name)
 		{
-			var e = new Ent { Id = _id++, Name = name, CardId = "S" + name, Kind = Kind.Spell, Cost = cost, Text = text };
+			var kind = text.IndexOf("Battlecry", StringComparison.OrdinalIgnoreCase) >= 0 ? Kind.Minion : Kind.Spell;
+			var e = new Ent { Id = _id++, Name = name, CardId = "S" + name, Kind = kind, Cost = cost, Text = text };
 			CardText.Classify(e);
 			return e;
 		}
@@ -290,6 +296,23 @@ namespace HsHelper.Tests
 				Check("解析火球術「Deal 6 damage」→ 敵方任意目標", Spell(4, "Deal $6 damage.", "f").Target == TargetKind.EnemyAny);
 				Check("解析「Deal 2 damage to all minions」→ AOE 不需目標", Spell(4, "Deal 2 damage to all minions.", "g") is var g && g.Target == TargetKind.None && g.AoE);
 				Check("解析獵人英雄技能 → 不需目標", HeroPower("Deal 2 damage to the enemy hero.").Target == TargetKind.None);
+				// 實測報告：靈魂虹吸被選到自己英雄
+				Check("解析靈魂虹吸「Destroy a minion. Restore 3 Health to your hero.」→ 敵方手下",
+					Spell(6, "Destroy a minion. Restore #3 Health to_your hero.", "k").Target == TargetKind.EnemyMinion);
+				Check("解析巫毒巫醫「Restore 2 Health」→ 友方（不會補敵方英雄）", Spell(1, "<b>Battlecry:</b> Restore #2_Health.", "l").Target == TargetKind.FriendlyAny);
+				Check("解析神聖新星（全場傷害＋全場治療）→ 不需目標", Spell(3, "Deal $2 damage to all enemy minions. Restore #2 Health to all friendly characters.", "m").Target == TargetKind.None);
+				Check("解析吸取生命「Lifesteal. Deal 2 damage.」→ 敵方任意", Spell(3, "<b>Lifesteal</b>. Deal $2 damage.", "n").Target == TargetKind.EnemyAny);
+				Check("解析秘法飛彈（隨機）→ 不需目標", Spell(1, "Deal $3 damage randomly split among all enemies.", "o").Target == TargetKind.None);
+				Check("解析生命分流「Draw a card and take 2 damage」→ 不需目標", HeroPower("<b>Hero Power</b> Draw a card and take $2 damage.").Target == TargetKind.None);
+				Check("解析「Set a minion's Attack and Health to 1」→ 不是治療", Spell(1, "Set a minion's Attack and Health to 1.", "p").Target == TargetKind.EnemyMinion);
+				Check("解析「Draw a minion」→ 不需目標", Spell(1, "Draw a minion. Restore Health to your hero equal to its Cost.", "q").Target == TargetKind.None);
+				Check("解析「After you play a minion, draw a card」→ 不需目標", Spell(2, "After you play a minion, draw a card.", "r").Target == TargetKind.None);
+				{
+					var pact = Spell(1, "Destroy a friendly minion. Restore #8 Health to your hero.", "黑暗契約");
+					var weak = Minion(1, 1, "1/1"); var strong = Minion(6, 6, "6/6");
+					var sp = Board(1, new[] { strong, weak }, new Ent[0], new[] { pact });
+					Check("「消滅一個友方手下」挑最弱的", pact.Target == TargetKind.FriendlyMinion && Planner.PickTarget(sp, pact, pact.Target)?.Id == weak.Id);
+				}
 				Check("解析冰川裂片「Freeze an enemy」→ 需要目標（可選英雄）", Spell(1, "<b>Battlecry:</b> <b>Freeze</b> an enemy.", "h").Target == TargetKind.EnemyAny);
 				Check("解析「Silence a minion」→ 只能選手下", Spell(1, "<b>Silence</b> a minion.", "i").Target == TargetKind.EnemyMinion);
 				Check("解析「Deal 3 damage to a minion」→ 只能選手下", Spell(3, "<b>Lifesteal</b> Deal $3 damage to a minion. If it dies, return this to your hand.", "j").Target == TargetKind.EnemyMinion);
