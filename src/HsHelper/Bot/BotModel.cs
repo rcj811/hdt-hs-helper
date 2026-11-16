@@ -40,6 +40,15 @@ namespace HsHelper.Bot
 		public int Discard;           // 出牌時棄掉幾張手牌（末日守衛 2、靈魂之火 1、「棄掉你的手牌」10）
 		public int ManaGain;          // 「獲得 N 個法力水晶（僅限本回合）」之類的加水晶法術（啟動、偽造的幸運幣）
 		public bool ManaRefresh;      // 「重置 N 個法力水晶」：只能補回已用掉的
+		// v0.9.5：讀卡牌敘述擷取的結構化效果（出牌時的效果；手下只看戰吼）
+		public int Draw;              // 抽幾張牌
+		public int SumN, SumA, SumH;  // 召喚 N 隻 A/H
+		public int GainArmor;         // 獲得護甲
+		public int BuffAllA, BuffAllH;// 我方所有手下 +A/+H
+		public int FaceDmg;           // 直接打對手英雄（不用選目標）
+		public int Heal;              // 恢復幾點
+		public int Gen;               // 發現／拿到幾張牌（加入手牌）
+		public int HeroAtk;           // 英雄本回合 +攻擊
 		public double Learned = double.NaN; // 實戰觀察到的效果價值（沒觀察過為 NaN）
 		public bool LearnedTarget;    // 目標類型是實戰學到的（敘述看不懂）
 		public int LAtk, LHp;         // 學到的：對目標造成的攻擊／血量變化
@@ -64,10 +73,12 @@ namespace HsHelper.Bot
 		public bool MainAction;
 		public int Turn;
 		public int Mana;
+		public int OppMana;           // 對手目前的水晶上限（職業模組用，v0.9.5）
 		public int ManaSpent;         // 本回合已用掉的水晶（重置水晶類的上限）
 		public string MyClass;
 
 		public List<Ent> Hand = new List<Ent>();
+		public List<Ent> Deck = new List<Ent>();       // 牌庫剩下的牌（HDT 依套牌清單推算；v0.9.5）
 		public List<Ent> MyBoard = new List<Ent>();
 		public List<Ent> OppBoard = new List<Ent>();
 		public List<Ent> Offered = new List<Ent>();

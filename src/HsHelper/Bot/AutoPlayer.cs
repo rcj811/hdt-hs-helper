@@ -115,8 +115,11 @@ namespace HsHelper.Bot
 				p = Learner.Profile(Db, s.OppClass, s.OppCards,
 					_oppTurns > 0 ? _faceTaken / (double)_oppTurns : -1,
 					_oppTurns > 0 ? _aoe * 5.0 / _oppTurns : -1);
-			Search.W = Learner.Adjust(_baseWeights, _style, p);
-			StyleText = Learner.Describe(_style, p) + (string.IsNullOrEmpty(s.DeckName) ? "" : $"｜套牌 {s.DeckName}");
+			// 職業卡牌模組：確認對手職業後，預測對手下回合可能的清場與爆發（v0.9.5）
+			var threat = ClassThreat.For(s.OppClass, Math.Min(10, s.OppMana + 1), s.OppCards);
+			Search.W = ClassThreat.Apply(Learner.Adjust(_baseWeights, _style, p), threat);
+			StyleText = Learner.Describe(_style, p) + (string.IsNullOrEmpty(threat.Summary) ? "" : $"｜對手 {threat.Summary}")
+			            + (string.IsNullOrEmpty(s.DeckName) ? "" : $"｜套牌 {s.DeckName}");
 		}
 
 		private void RecordGame(Snapshot s)
@@ -321,6 +324,7 @@ namespace HsHelper.Bot
 			ApplyLearning(s);
 			lock(DbLock)
 				Lessons.Apply(s, Db.LessonMap);
+			TrackCards(s);
 			BotAction action;
 			try
 			{
@@ -339,6 +343,25 @@ namespace HsHelper.Bot
 			Status = action.Describe;
 			Log.Info("Action: " + action.Describe);
 			Execute(s, action);
+		}
+
+		// ───────── 手牌／牌庫能力（v0.9.5）─────────
+		public string CardsText { get; private set; } = "";
+		private string _handSig = "";
+
+		/// <summary>每抽一張、打出一張（手牌或牌庫變了）就重新統計能力，寫進 log 並顯示在面板。</summary>
+		private void TrackCards(Snapshot s)
+		{
+			var sig = string.Join(",", s.Hand.Select(h => h.Id)) + "|" + s.Deck.Count;
+			if(sig == _handSig)
+				return;
+			_handSig = sig;
+			CardsText = CardSummary.Line(s);
+			Log.Info("Cards: " + CardsText + "｜手牌：" + string.Join("、", s.Hand.Select(h =>
+			{
+				var tags = CardText.Tags(h);
+				return tags.Count > 0 ? $"{h.Name}[{string.Join(" ", tags)}]" : h.Name;
+			})));
 		}
 
 		// ───────── 實戰學習看不懂的牌（v0.9.4） ─────────

@@ -54,6 +54,8 @@ namespace HsHelper
 				Add(autoOn ? $"▶ 自動：{autoStatus}" : "自動出牌：關（F8 開始）", autoOn ? AutoOnBrush : DimBrush, 12, autoOn, 2);
 				if(autoOn && !string.IsNullOrEmpty(style))
 					Add($"　打法：{style}", DimBrush, 11);
+				if(autoOn && !string.IsNullOrEmpty(HsHelperPlugin.CardsLine))
+					Add($"　{HsHelperPlugin.CardsLine}", DimBrush, 11);
 			}
 
 			if(s.IsBattlegrounds)
@@ -102,6 +104,8 @@ namespace HsHelper
 				FontSize = size,
 				FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
 				Margin = new Thickness(0, topMargin, 0, 1),
+				TextWrapping = TextWrapping.Wrap,
+				MaxWidth = 340,
 				FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI")
 			});
 		}

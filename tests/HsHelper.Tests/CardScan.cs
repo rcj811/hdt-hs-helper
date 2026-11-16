@@ -67,3 +67,92 @@ namespace HsHelper.Tests
 		}
 	}
 }
+
+namespace HsHelper.Tests
+{
+	/// <summary>全卡效果表：每張可收藏卡 AI 認出的能力（docs/card-effects.csv）＋辨識率統計。</summary>
+	public static class EffectScan
+	{
+		public static void Run(string path, string outCsv)
+		{
+			var doc = System.Xml.Linq.XDocument.Load(path);
+			var sb = new System.Text.StringBuilder("\uFEFFCardId,中文名,英文名,類型,費用,AI 認出的效果,敘述\n");
+			int total = 0, withText = 0, recognized = 0, keywordOnly = 0;
+			var seen = new System.Collections.Generic.HashSet<string>();
+			foreach(var e in doc.Root.Elements("Entity"))
+			{
+				System.Xml.Linq.XElement T(int id) => System.Linq.Enumerable.FirstOrDefault(e.Elements("Tag"), t => (string)t.Attribute("enumID") == id.ToString());
+				int V(int id) => (int?)T(id)?.Attribute("value") ?? 0;
+				if(V(321) != 1) continue;
+				var type = V(202);
+				if(type != 4 && type != 5 && type != 7) continue;
+				var en = T(185)?.Element("enUS")?.Value ?? "";
+				var text = T(184)?.Element("enUS")?.Value ?? "";
+				if(!seen.Add(en + "|" + text)) continue;
+				total++;
+				var ent = new HsHelper.Bot.Ent { Text = text, Cost = V(48), Atk = V(47), Hp = V(45),
+					Kind = type == 4 ? HsHelper.Bot.Kind.Minion : type == 5 ? HsHelper.Bot.Kind.Spell : HsHelper.Bot.Kind.Weapon,
+					Taunt = V(190) > 0, Charge = V(197) > 0, Rush = V(791) > 0, DivineShield = V(194) > 0, Lifesteal = V(1085) > 0, Poisonous = V(363) > 0, Windfury = V(189) > 0 };
+				HsHelper.Bot.CardText.Classify(ent);
+				var tags = HsHelper.Bot.CardText.Tags(ent);
+				var scope = HsHelper.Bot.CardText.PlayScope(ent);
+				var hasPlayText = scope.Length > 0;
+				if(hasPlayText) withText++;
+				var effectTags = tags.Where(x => !new[] { "嘲諷", "衝鋒", "突襲", "聖盾", "吸血", "劇毒", "風怒", "目標看不懂" }.Contains(x)).ToList();
+				if(hasPlayText && effectTags.Count > 0) recognized++;
+				if(!hasPlayText && tags.Count > 0) keywordOnly++;
+				string q(string x) => "\"" + (x ?? "").Replace("\"", "'") + "\"";
+				var zh = System.Text.RegularExpressions.Regex.Replace(T(184)?.Element("zhTW")?.Value ?? "", @"<[^>]+>|\s+|[\[\]$#]", " ").Trim();
+				sb.Append($"{T(185)?.Parent?.Attribute("CardID")?.Value},{q(T(185)?.Element("zhTW")?.Value)},{q(en)},{(type == 4 ? "手下" : type == 5 ? "法術" : "武器")},{V(48)},{q(string.Join(" ", tags))},{q(zh)}\n");
+			}
+			System.IO.File.WriteAllText(outCsv, sb.ToString(), new System.Text.UTF8Encoding(false));
+			System.Console.WriteLine($"可收藏卡（去重）：{total}；出牌時有效果文字：{withText}；其中認出至少一種效果：{recognized}（{recognized * 100.0 / System.Math.Max(1, withText):0.#}%）；純關鍵字手下：{keywordOnly}");
+		}
+	}
+}
+
+namespace HsHelper.Tests
+{
+	/// <summary>產生職業卡牌模組（src/HsHelper/Resources/class-threats.json）：每個職業的清場牌與爆發牌。</summary>
+	public static class ClassThreatGen
+	{
+		private static readonly System.Collections.Generic.Dictionary<int, string> Names = new System.Collections.Generic.Dictionary<int, string>
+		{
+			[1] = "DeathKnight", [2] = "Druid", [3] = "Hunter", [4] = "Mage", [5] = "Paladin", [6] = "Priest",
+			[7] = "Rogue", [8] = "Shaman", [9] = "Warlock", [10] = "Warrior", [14] = "DemonHunter"
+		};
+
+		public static void Run(string path, string outJson)
+		{
+			var doc = System.Xml.Linq.XDocument.Load(path);
+			var mods = Names.ToDictionary(k => k.Key, k => new HsHelper.Bot.ClassThreat.Module { Class = k.Value });
+			foreach(var e in doc.Root.Elements("Entity"))
+			{
+				System.Xml.Linq.XElement T(int id) => System.Linq.Enumerable.FirstOrDefault(e.Elements("Tag"), t => (string)t.Attribute("enumID") == id.ToString());
+				int V(int id) => (int?)T(id)?.Attribute("value") ?? 0;
+				if(V(321) != 1) continue;
+				var type = V(202);
+				if(type != 4 && type != 5) continue;
+				if(!mods.TryGetValue(V(199), out var mod)) continue;
+				var ent = new HsHelper.Bot.Ent { Text = T(184)?.Element("enUS")?.Value ?? "", Cost = V(48), Atk = V(47), Hp = V(45),
+					Kind = type == 4 ? HsHelper.Bot.Kind.Minion : HsHelper.Bot.Kind.Spell, Charge = V(197) > 0 };
+				HsHelper.Bot.CardText.Classify(ent);
+				var id = (string)e.Attribute("CardID");
+				var scope = HsHelper.Bot.CardText.PlayScope(ent).ToLowerInvariant();
+				if(ent.AoE && !scope.Contains("friendly minions") && !scope.Contains("your minions"))
+					mod.Aoe.Add(new HsHelper.Bot.ClassThreat.Item { Id = id, Cost = ent.Cost, Dmg = ent.Damage > 0 ? ent.Damage : 10 });
+				var burn = ent.FaceDmg + (ent.Kind == HsHelper.Bot.Kind.Spell && ent.Target == HsHelper.Bot.TargetKind.EnemyAny ? ent.Damage : 0)
+				           + (ent.Kind == HsHelper.Bot.Kind.Minion && ent.Charge ? ent.Atk : 0) + ent.HeroAtk;
+				if(burn > 0)
+					mod.Burn.Add(new HsHelper.Bot.ClassThreat.Item { Id = id, Cost = ent.Cost, Dmg = burn });
+			}
+			var list = mods.Values.ToList();
+			System.IO.File.WriteAllText(outJson, HsHelper.Bot.ClassThreat.ToJson(list), new System.Text.UTF8Encoding(false));
+			foreach(var m in list)
+			{
+				var a4 = m.Aoe.Where(x => x.Cost <= 4).Select(x => x.Dmg).OrderBy(x => x).ToList();
+				System.Console.WriteLine($"{m.Class,-12} 清場 {m.Aoe.Count,3} 張（4 費內 {a4.Count}，中位 {(a4.Count > 0 ? a4[a4.Count / 2] : 0)} 傷）  爆發 {m.Burn.Count,3} 張");
+			}
+		}
+	}
+}

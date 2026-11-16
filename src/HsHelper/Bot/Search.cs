@@ -27,6 +27,8 @@ namespace HsHelper.Bot
 		public int RerankTop = 30;           // 只對前 N 個候選局面做反擊模擬
 		public double Overextend = 0;        // 學習：對手常用 AOE 時，場上超過 3 隻手下每隻扣分
 		public double EnemyBurst = 2;        // 學習：對手手牌／技能的預估額外傷害
+		public int EnemyAoeDmg = 0;          // 職業模組：對手下回合可能的清場傷害（v0.9.5）
+		public double EnemyAoeChance = 0;    // 職業模組：對手有清場牌的機率
 
 		public Weights Clone() => (Weights)MemberwiseClone();
 	}
@@ -315,6 +317,8 @@ namespace HsHelper.Bot
 						Id = c.Id, Atk = c.Atk, Hp = c.Hp, Taunt = c.Taunt, DS = c.DivineShield, Poison = c.Poisonous,
 						Lifesteal = c.Lifesteal, Stealth = c.Stealth, Windfury = c.Windfury
 					};
+					ApplyExtras(n, c); // 戰吼：召喚、抽牌、護甲、全體增益、打臉（先套用，新下的手下不吃全體增益）
+					if(n.My.Count >= 7) n.My.RemoveAt(n.My.Count - 1); // 召喚佔滿時保留本體的位置
 					if(c.Charge) m.AttacksLeft = c.MaxAttacks;
 					else if(c.Rush) { m.AttacksLeft = c.MaxAttacks; m.MinionsOnly = true; }
 					n.My.Add(m);
@@ -360,8 +364,8 @@ namespace HsHelper.Bot
 					var isDestroy = c.Damage == 0;
 					foreach(var m in n.Op) Hit(m, isDestroy ? 999 : c.Damage);
 					if(!enemyOnly) foreach(var m in n.My) Hit(m, isDestroy ? 999 : c.Damage);
-					// 「所有角色」連英雄一起打（地獄烈焰會打到自己的英雄）
-					if(!isDestroy && text.IndexOf("characters", StringComparison.OrdinalIgnoreCase) >= 0)
+					// 「所有角色／所有敵人」連英雄一起打（地獄烈焰會打到自己的英雄）
+					if(!isDestroy && (text.IndexOf("characters", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("enemies", StringComparison.OrdinalIgnoreCase) >= 0))
 					{
 						DamageHero(n.Opp, c.Damage);
 						if(!enemyOnly) DamageHero(n.Me, c.Damage);
@@ -370,16 +374,12 @@ namespace HsHelper.Bot
 				}
 				else
 				{
-					var d = Draw.Match(text);
-					var draws = d.Success ? (d.Groups[1].Value == "a" ? 1 : int.Parse(d.Groups[1].Value)) : 0;
+					// v0.9.5：讀卡認得的效果（召喚、抽牌、護甲、全體增益、打臉）直接模擬，局面評分會算到
+					var known = ApplyExtras(n, c);
 					// 看不懂效果的法術：價值至少比「留在手上」高一點（v0.9.1：0 費法術原本只值 4 分 < 手牌 5.6 分，一直不出）
-					var guess = Math.Max(4 + c.Cost * 3 + draws * 3, W.HandCard + 1 + c.Cost * 3);
+					var guess = known ? c.Cost * 1.0 + 1 : Math.Max(4 + c.Cost * 3, W.HandCard + 1 + c.Cost * 3);
 					// v0.9.4：實戰觀察過的牌，用觀察到的價值（只往上調：延遲效果的牌當下看不出效果，不能因此變成廢牌）
 					n.Bonus += double.IsNaN(c.Learned) ? guess : Math.Max(guess, c.Learned);
-					var ar = Armor.Match(text);
-					if(ar.Success) n.Me.Armor += int.Parse(ar.Groups[1].Value);
-					if(c.Damage > 0 && text.IndexOf("enemy hero", StringComparison.OrdinalIgnoreCase) >= 0)
-						n.Opp.Hp -= c.Damage;
 				}
 				yield return n;
 				yield break;
@@ -391,6 +391,39 @@ namespace HsHelper.Bot
 				ApplyTargeted(n, c, tid);
 				yield return n;
 			}
+		}
+
+		/// <summary>套用讀卡得到的結構化效果（召喚、抽牌、護甲、全體增益、打臉）。回傳有沒有認出任何效果。</summary>
+		private static bool ApplyExtras(S n, Ent c)
+		{
+			var any = false;
+			if(c.BuffAllA > 0 || c.BuffAllH > 0)
+			{
+				foreach(var m in n.My) { m.Atk += c.BuffAllA; m.Hp += c.BuffAllH; }
+				any = true;
+			}
+			if(c.SumN > 0)
+			{
+				for(var i = 0; i < c.SumN && n.My.Count < 7; i++)
+					n.My.Add(new M { Id = n.NextTokenId--, Atk = c.SumA, Hp = c.SumH });
+				any = true;
+			}
+			if(c.HeroAtk > 0)
+			{
+				n.Me.Atk += c.HeroAtk;
+				if(n.Me.AttacksLeft == 0 && !n.Moves.Any(x => x.Source == n.Me.Id && x.Type == ActionType.Attack)) n.Me.AttacksLeft = 1;
+				any = true;
+			}
+			if(c.Draw + c.Gen > 0)
+			{
+				// 抽到／發現的牌：放進手牌當作「這回合打不出來的牌」（評分會算手牌數）
+				for(var i = 0; i < c.Draw + c.Gen && n.Hand.Count < 10; i++)
+					n.Hand.Add(new Ent { Id = -50000 - n.Hand.Count, Name = "抽到的牌", Cost = 99, Kind = Kind.Other });
+				any = true;
+			}
+			if(c.GainArmor > 0) { n.Me.Armor += c.GainArmor; any = true; }
+			if(c.FaceDmg > 0 && c.Target == TargetKind.None) { DamageHero(n.Opp, c.FaceDmg); any = true; }
+			return any;
 		}
 
 		private static IEnumerable<int> TargetsFor(S st, TargetKind kind)
@@ -714,6 +747,14 @@ namespace HsHelper.Bot
 			}
 
 			v -= w.Overextend * Math.Max(0, st.My.Count - 3);
+			if(w.EnemyAoeDmg > 0 && w.EnemyAoeChance > 0)
+			{
+				// 職業模組：對手可能清場 → 會被一次清掉的手下打折（鋪場不要全部押上去）
+				double atRisk = 0;
+				foreach(var m in st.My.Where(m => !m.DS && m.Hp <= w.EnemyAoeDmg))
+					atRisk += w.MyMinionBase + m.Hp * w.MyMinionHp + m.Atk * w.MyMinionAtk;
+				v -= w.EnemyAoeChance * atRisk * 1.0;
+			}
 			v += st.Hand.Count * w.HandCard;
 			v += st.Bonus;
 			if(!afterEnemyTurn)

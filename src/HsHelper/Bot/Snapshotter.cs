@@ -40,6 +40,8 @@ namespace HsHelper.Bot
 			s.OppClass = game.Opponent.CurrentClass;
 			var deck = game.CurrentSelectedDeck;
 			if(deck != null) { s.DeckId = deck.Id; s.DeckName = deck.Name ?? ""; }
+			s.Deck = ReadDeck(game.Player);
+			try { s.OppMana = game.OpponentEntity?.GetTag(GameTag.RESOURCES) ?? 0; } catch(Exception) { }
 			var ps = me.GetTag(GameTag.PLAYSTATE);
 			s.Won = ps == (int)PlayState.WON;
 			try
@@ -201,6 +203,55 @@ namespace HsHelper.Bot
 				e.Exhausted = e.Exhausted || T(GameTag.HERO_POWER_DISABLED) > 0;
 			CardText.Classify(e, heroPower);
 			return e;
+		}
+
+		// ───────── 牌庫剩下的牌（v0.9.5）─────────
+		private static System.Reflection.MethodInfo _deckState;
+		private static string _deckKey = "";
+		private static List<Ent> _deckCache = new List<Ent>();
+
+		/// <summary>讀 HDT 推算的「牌庫剩下的牌」（套牌清單扣掉已抽／已打出），讀不到回傳空清單。</summary>
+		private static List<Ent> ReadDeck(Hearthstone_Deck_Tracker.Hearthstone.Player player)
+		{
+			try
+			{
+				_deckState ??= player.GetType().GetMethod("GetDeckState",
+					System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+				var state = _deckState?.Invoke(player, null);
+				var cards = state?.GetType().GetProperty("RemainingInDeck")?.GetValue(state) as IEnumerable<Hearthstone_Deck_Tracker.Hearthstone.Card>;
+				if(cards == null)
+					return new List<Ent>();
+				var list = cards.Where(c => c != null && c.Count > 0).ToList();
+				var key = string.Join(",", list.Select(c => c.Id + "x" + c.Count));
+				if(key == _deckKey)
+					return _deckCache;
+				var result = new List<Ent>();
+				foreach(var c in list)
+				{
+					var mech = c.Mechanics ?? new string[0];
+					bool M(string m) => mech.Contains(m);
+					for(var i = 0; i < c.Count; i++)
+					{
+						var e = new Ent
+						{
+							Id = -1, CardId = c.Id, Name = c.LocalizedName ?? c.Name ?? c.Id, Cost = c.Cost, Atk = c.Attack, Hp = c.Health,
+							Kind = c.Type == "Minion" ? Kind.Minion : c.Type == "Spell" ? Kind.Spell : c.Type == "Weapon" ? Kind.Weapon : Kind.Other,
+							Taunt = M("TAUNT"), Charge = M("CHARGE"), Rush = M("RUSH"), DivineShield = M("DIVINE_SHIELD"),
+							Lifesteal = M("LIFESTEAL"), Poisonous = M("POISONOUS"), Windfury = M("WINDFURY"),
+							Text = c.EnglishText ?? ""
+						};
+						CardText.Classify(e);
+						result.Add(e);
+					}
+				}
+				_deckKey = key;
+				_deckCache = result;
+				return result;
+			}
+			catch(Exception)
+			{
+				return new List<Ent>();
+			}
 		}
 
 		private static string SafeText(Entity x)

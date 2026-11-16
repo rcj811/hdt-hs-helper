@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -48,7 +49,133 @@ namespace HsHelper.Bot
 		// 棄牌：末日守衛「Discard two random cards」、靈魂之火「Discard a random card」；排除「每當你棄掉…」這種觸發
 		private static readonly Regex DiscardRe = new Regex(@"(?<!you |whenever |when |if you )\bdiscard (your hand|(a|an|one|two|three|\d+)( random| your (lowest|highest)-cost)? cards?)", O);
 
+		// ───────── v0.9.5：結構化效果 ─────────
+		private const string Num = @"(a|an|one|two|three|four|five|six|seven|\d+)";
+		private static readonly Regex SummonRe = new Regex(@"\bsummon " + Num + @" (\d+)/(\d+)", O);
+		private static readonly Regex DrawRe = new Regex(@"(?<!opponent |they |each player |both players )\bdraw " + Num + @" (cards?|minions?|spells?)", O);
+		private static readonly Regex ArmorRe = new Regex(@"\bgain (\d+) armor", O);
+		private static readonly Regex BuffAllRe = new Regex(@"\bgive (your|all friendly|your other|all your) minions \+(\d+)/\+(\d+)", O);
+		private static readonly Regex BuffAllAtkRe = new Regex(@"\bgive (your|all friendly|your other|all your) minions \+(\d+) attack", O);
+		private static readonly Regex FaceRe = new Regex(@"\bdeal (\d+) damage to (the enemy hero|your opponent)", O);
+		private static readonly Regex DiscoverRe = new Regex(@"\bdiscover\b", O);
+		private static readonly Regex AddHandRe = new Regex(@"\b(add|get) " + Num + @" .{0,60}?(to your hand|\bcards?\b|\bspells?\b|\bminions?\b|copies)", O);
+		private static readonly Regex HeroAtkRe = new Regex(@"\bgive your hero \+(\d+) attack", O);
+		private static readonly Regex RandomCostRe = new Regex(@"\bsummon " + Num + @" random (\d+)-cost", O);
+		private static readonly Regex HealRe = new Regex(@"\brestore (\d+) health", O);
+
+		private static int N(string v)
+		{
+			switch(v.ToLowerInvariant())
+			{
+				case "a": case "an": case "one": return 1;
+				case "two": return 2; case "three": return 3; case "four": return 4;
+				case "five": return 5; case "six": return 6; case "seven": return 7;
+				default: return int.TryParse(v, out var n) ? n : 1;
+			}
+		}
+
+		/// <summary>出牌當下的效果文字（手下只看戰吼；去掉觸發句）。</summary>
+		public static string PlayScope(Ent e)
+		{
+			var t = e.Text ?? "";
+			if(e.Kind == Kind.Minion)
+			{
+				var bi = t.IndexOf("battlecry", System.StringComparison.OrdinalIgnoreCase);
+				if(bi < 0) return "";
+				t = t.Substring(bi + 9).TrimStart(':', ' ');
+			}
+			var clauses = t.Split(new[] { '.', ';' }, System.StringSplitOptions.RemoveEmptyEntries).Select(c => c.Trim())
+				.Where(c => c.Length > 0 && !Trigger.IsMatch(c));
+			return string.Join(". ", clauses);
+		}
+
+		private static void Extras(Ent e)
+		{
+			var t = PlayScope(e);
+			if(t.Length == 0) return;
+			var m = SummonRe.Match(t);
+			if(m.Success) { e.SumN = N(m.Groups[1].Value); e.SumA = int.Parse(m.Groups[2].Value); e.SumH = int.Parse(m.Groups[3].Value); }
+			m = DrawRe.Match(t);
+			if(m.Success) e.Draw = N(m.Groups[1].Value);
+			m = ArmorRe.Match(t);
+			if(m.Success) e.GainArmor = int.Parse(m.Groups[1].Value);
+			m = BuffAllRe.Match(t);
+			if(m.Success) { e.BuffAllA = int.Parse(m.Groups[2].Value); e.BuffAllH = int.Parse(m.Groups[3].Value); }
+			else if((m = BuffAllAtkRe.Match(t)).Success) e.BuffAllA = int.Parse(m.Groups[2].Value);
+			m = FaceRe.Match(t);
+			if(m.Success) e.FaceDmg = int.Parse(m.Groups[1].Value);
+			m = HealRe.Match(t);
+			if(m.Success) e.Heal = int.Parse(m.Groups[1].Value);
+			if(DiscoverRe.IsMatch(t)) e.Gen = 1;
+			else if((m = AddHandRe.Match(t)).Success && !t.ToLowerInvariant().Contains("opponent's hand")) e.Gen = N(m.Groups[2].Value);
+			m = HeroAtkRe.Match(t);
+			if(m.Success) e.HeroAtk = int.Parse(m.Groups[1].Value);
+			if(e.SumN == 0 && (m = RandomCostRe.Match(t)).Success)
+			{
+				var cost = int.Parse(m.Groups[2].Value);
+				e.SumN = N(m.Groups[1].Value); e.SumA = cost; e.SumH = cost + 1; // 隨機 N 費手下：平均約 N/N+1
+			}
+		}
+
+		/// <summary>「選一個手下。之後…」：目標由後面的句子決定（v0.9.5 全卡掃描）。</summary>
+		private static TargetKind ChooseRule(string clause, string scope)
+		{
+			var c = clause.ToLowerInvariant();
+			if(!System.Text.RegularExpressions.Regex.IsMatch(c, @"^choose an? (minion|character|enemy minion|friendly minion)$"))
+				return TargetKind.Unknown;
+			var rest = scope.ToLowerInvariant();
+			if(c.Contains("enemy")) return TargetKind.EnemyMinion;
+			if(c.Contains("friendly")) return TargetKind.FriendlyMinion;
+			if(System.Text.RegularExpressions.Regex.IsMatch(rest, @"deal \d+ damage") && c.Contains("character")) return TargetKind.EnemyAny;
+			if(System.Text.RegularExpressions.Regex.IsMatch(rest, @"destroy it|can't attack|dormant|steals?|freeze it|silence it|attack it|deal \d+ damage to it|it takes"))
+				return TargetKind.EnemyMinion;
+			if(System.Text.RegularExpressions.Regex.IsMatch(rest, @"\bgive it|\+\d+|whenever it attacks|reborn|divine shield|spell damage|restore|return it to the battlefield|has stealth"))
+				return TargetKind.FriendlyMinion;
+			return TargetKind.Unknown;
+		}
+
+		/// <summary>這張牌的能力標籤（面板與 log 顯示用；全卡掃描也用它統計辨識率）。</summary>
+		public static List<string> Tags(Ent e)
+		{
+			var t = new List<string>();
+			if(e.IsCoin || e.ManaGain > 0) t.Add(e.ManaRefresh ? $"重置{e.ManaGain}水晶" : $"+{(e.IsCoin ? 1 : e.ManaGain)}水晶");
+			if(e.AoE) t.Add(e.Damage > 0 ? $"全場{e.Damage}傷" : "全場消滅");
+			else if(e.Damage > 0 && e.Target != TargetKind.None) t.Add($"{e.Damage}傷害");
+			if(e.FaceDmg > 0) t.Add($"打臉{e.FaceDmg}");
+			var low = (PlayScope(e) ?? "").ToLowerInvariant();
+			if(!e.AoE && e.Damage == 0 && (e.Target == TargetKind.EnemyMinion || e.Target == TargetKind.EnemyAny))
+				t.Add(low.Contains("destroy") ? "消滅" : low.Contains("transform") ? "變形" : low.Contains("silence") ? "沉默"
+					: low.Contains("freeze") ? "冰凍" : low.Contains("return") ? "彈回" : "對敵");
+			if(e.Target == TargetKind.FriendlyMinion || e.Target == TargetKind.FriendlyAny)
+				t.Add(e.Heal > 0 ? $"治療{e.Heal}" : "增益友方");
+			else if(e.Heal > 0) t.Add($"治療{e.Heal}");
+			if(e.BuffAllA > 0 || e.BuffAllH > 0) t.Add($"全體+{e.BuffAllA}/+{e.BuffAllH}");
+			if(e.SumN > 0) t.Add($"召喚{e.SumN}×{e.SumA}/{e.SumH}");
+			if(e.Draw > 0) t.Add($"抽{e.Draw}");
+			if(e.Gen > 0) t.Add(DiscoverRe.IsMatch(PlayScope(e)) ? "發現" : $"拿{e.Gen}張牌");
+			if(e.HeroAtk > 0) t.Add($"英雄+{e.HeroAtk}攻");
+			if(e.GainArmor > 0) t.Add($"護甲{e.GainArmor}");
+			if(e.Discard > 0) t.Add($"棄{(e.Discard >= 10 ? "全部" : e.Discard.ToString())}");
+			if(e.Kind == Kind.Minion)
+			{
+				if(e.Taunt) t.Add("嘲諷");
+				if(e.Charge) t.Add("衝鋒"); else if(e.Rush) t.Add("突襲");
+				if(e.DivineShield) t.Add("聖盾");
+				if(e.Lifesteal) t.Add("吸血");
+				if(e.Poisonous) t.Add("劇毒");
+				if(e.Windfury) t.Add("風怒");
+			}
+			if(e.Target == TargetKind.Unknown) t.Add("目標看不懂");
+			return t;
+		}
+
 		public static void Classify(Ent e, bool isHeroPower = false)
+		{
+			ClassifyTarget(e, isHeroPower);
+			Extras(e);
+		}
+
+		private static void ClassifyTarget(Ent e, bool isHeroPower)
 		{
 			var t = e.Text = Regex.Replace(Clean.Replace((e.Text ?? "").Replace("[x]", " "), "").Replace("_", " "), @"\s+", " ").Trim();
 			var dm = DealDamage.Match(t);
@@ -67,7 +194,7 @@ namespace HsHelper.Bot
 				e.ManaGain = v == "a" || v == "an" ? 1 : int.Parse(v);
 				e.ManaRefresh = mg.Groups[1].Value.ToLowerInvariant() == "refresh";
 			}
-			e.AoE = AllMinions.IsMatch(t) && (dm.Success || t.IndexOf("destroy", System.StringComparison.OrdinalIgnoreCase) >= 0);
+			e.AoE = (AllMinions.IsMatch(t) || AllEnemy.IsMatch(t) || System.Text.RegularExpressions.Regex.IsMatch(t, @"\ball enemies\b", RegexOptions.IgnoreCase)) && (dm.Success || t.IndexOf("destroy", System.StringComparison.OrdinalIgnoreCase) >= 0);
 
 			// 手下只有「戰吼」那段會在出牌時選目標；沒有戰吼的手下不需要目標
 			var scope = t;
@@ -117,7 +244,7 @@ namespace HsHelper.Bot
 			else if(Has("destroy") || Has("transform") || Has("silence") || Has("freeze") || Has("return") || Has("enemy") || Has("set ") || Has("change") || Has("health to 1"))
 				e.Target = TargetKind.EnemyMinion;
 			else
-				e.Target = TargetKind.Unknown;
+				e.Target = ChooseRule(clause, scope);
 		}
 	}
 }

@@ -14,6 +14,7 @@ namespace HsHelper
 	/// </summary>
 	public class HsHelperPlugin : IPlugin
 	{
+		public static string CardsLine = "";
 		private StatePanel _panel;
 		private MenuItem _menuItem;
 		private readonly AutoPlayer _auto = new AutoPlayer();
@@ -130,6 +131,7 @@ namespace HsHelper
 			try { MechanicMonitor.CheckInGame(); } catch(Exception ex) { Log.Error(ex); }
 			try
 			{
+				CardsLine = _auto.CardsText;
 				_panel.Render(GameStateReader.Read(), _auto.Running, _auto.Status, _auto.StyleText);
 			}
 			catch(Exception ex)

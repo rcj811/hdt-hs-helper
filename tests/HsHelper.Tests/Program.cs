@@ -26,6 +26,8 @@ namespace HsHelper.Tests
 				Tuner.Run(args.Length > 1 ? int.Parse(args[1]) : 30);
 				return 0;
 			}
+			if(args.Length > 2 && args[0] == "--classthreat") { ClassThreatGen.Run(args[1], args[2]); return 0; }
+			if(args.Length > 2 && args[0] == "--effects") { EffectScan.Run(args[1], args[2]); return 0; }
 			if(args.Length > 1 && args[0] == "--zero") { ZeroScan.Run(args[1]); return 0; }
 			if(args.Length > 1 && args[0] == "--scan")
 			{
@@ -57,6 +59,8 @@ namespace HsHelper.Tests
 			VerifyTests();
 			Section("G. 實戰觀察學習看不懂的牌（v0.9.4）");
 			LessonTests();
+			Section("H. 手牌／牌庫能力、職業卡牌模組（v0.9.5）");
+			ModuleTests();
 
 			var summary = $"結果：{_pass} 通過，{_fail} 失敗";
 			Console.WriteLine();
@@ -168,6 +172,81 @@ namespace HsHelper.Tests
 				Check("匯入卡牌效果：新增 1 張、觀察較多的覆蓋 1 張", n == 2 && db.LessonMap["X1"].Tries == 5 && db.LessonMap.ContainsKey("X2"));
 				var n2 = db.MergeLessons(LearningDb.FromJson(db.ToJson()).Lessons);
 				Check("重複匯入不會重複加", n2 == 0 && db.Lessons.Count == 2);
+			}
+		}
+
+		private static void ModuleTests()
+		{
+			// 1. 手牌／牌庫能力統計
+			{
+				var hand = new[] { Spell(4, "Deal $6 damage.", "火球術"), Spell(7, "Deal $5 damage to all enemy minions.", "烈焰風暴"),
+					Spell(3, "Draw 2 cards.", "秘法智慧"), Card(4, 4, 5, "嘲諷4/5", taunt: true), Card(3, 3, 2, "衝鋒3/2", charge: true) };
+				var st = CardSummary.Count(hand);
+				Check("手牌能力：傷害1 全場1 抽牌1 嘲諷1 衝鋒1、爆發 9", st.Damage == 1 && st.AoE == 1 && st.Draw == 1 && st.Taunt == 1 && st.Charge == 1 && st.Burn == 9,
+					CardSummary.Describe(st));
+				var snap = Board(4, new Ent[0], new Ent[0], hand);
+				snap.Deck = new List<Ent> { Spell(1, "Deal $2 damage.", "冰槍"), Card(2, 2, 3) };
+				var line = CardSummary.Line(snap);
+				Check("面板一行含手牌與牌庫", line.Contains("手牌 5") && line.Contains("牌庫 2"), line);
+			}
+			// 2. 職業模組（內建資料）
+			{
+				var path = "../../src/HsHelper/Resources/class-threats.json";
+				Check("職業模組檔存在", System.IO.File.Exists(path), path);
+				if(System.IO.File.Exists(path))
+				{
+					ClassThreat.LoadFile(path);
+					var mage = ClassThreat.For("Mage", 7, null);
+					Check("法師 7 水晶：有清場威脅", mage.AoeDmg >= 2 && mage.AoeChance > 0, mage.Summary);
+					var mageSeen = ClassThreat.For("Mage", 7, new List<string> { ClassThreat.Modules["MAGE"].Aoe.First(x => x.Cost <= 7).Id });
+					Check("對手用過清場牌 → 機率調高", mageSeen.AoeChance > mage.AoeChance, mageSeen.Summary);
+					Check("沒有職業資料 → 不加威脅", ClassThreat.For("", 7, null).AoeDmg == 0);
+					Check("HDT 職業名稱格式（DemonHunter）對得上", ClassThreat.For("DemonHunter", 10, null).Burst > 0);
+				}
+			}
+			// 3. 清場威脅下：同費選比較不會被清掉的手下
+			{
+				var a = Card(2, 4, 2, "4/2"); var b = Card(2, 2, 4, "2/4");
+				var s0 = Board(2, new Ent[0], new Ent[0], new[] { a, b });
+				var old = Search.W;
+				Decide(s0, out var p0);
+				Search.W = ClassThreat.Apply(old, new ClassThreat.Threat { AoeDmg = 3, AoeChance = 0.35 });
+				Decide(s0, out var p1);
+				Search.W = old;
+				Check("對手可能 3 傷清場：改下 2/4（不會被清掉）", p1.Contains("2/4"), $"沒模組：{p0}｜有模組：{p1}");
+			}
+			// 4. 模擬對戰：對上清場多／爆發多的對手，有模組 vs 沒模組
+			{
+				ClassThreat.Set(new ClassThreat.Module { Class = "TESTAOE", Aoe = new List<ClassThreat.Item> { new ClassThreat.Item { Id = "AOE", Cost = 4, Dmg = 2 } } });
+				ClassThreat.Set(new ClassThreat.Module { Class = "TESTBURN", Burn = Enumerable.Range(1, 3).Select(c => new ClassThreat.Item { Id = "B" + c, Cost = c, Dmg = 3 }).ToList() });
+				void Compare(string name, string cls, Policy opp, double aoeRate, double burnRate)
+				{
+					const int n = 200;
+					var baseW = new Weights();
+					int Run(bool module)
+					{
+						var rng = new Random(777);
+						int wins = 0, illegal = 0;
+						for(var g = 0; g < n; g++)
+						{
+							var mine = RandomDeckSpec(rng);
+							var theirs = RandomDeckSpec(rng, aoeRate, burnRate);
+							Policy me = (s, skip) =>
+							{
+								Search.W = module ? ClassThreat.Apply(baseW, ClassThreat.For(cls, Math.Min(10, s.OppMana + 1), null)) : baseW;
+								return NewAi(s, skip);
+							};
+							if(PlayGame(me, opp, mine, theirs, g % 2 == 0, new Random(88000 + g), ref illegal)) wins++;
+						}
+						Search.W = baseW;
+						return wins;
+					}
+					var off = Run(false);
+					var on = Run(true);
+					Check($"{name}：有職業模組不比沒有差（200 場容許 3% 誤差）", on >= off - 6, $"沒模組 {off}/{n}（{off / 2.0:F1}%）→ 有模組 {on}/{n}（{on / 2.0:F1}%）");
+				}
+				Compare("對清場多的對手（3 成牌是全場 2 傷）", "TESTAOE", TraderBot, 0.3, 0.05);
+				Compare("對爆發多的對手（3 成牌是 3 點直傷）", "TESTBURN", FaceBot, 0.05, 0.3);
 			}
 		}
 
@@ -426,6 +505,34 @@ namespace HsHelper.Tests
 				s.MyHero.Hp = 3;
 				Decide(s, out var plan);
 				Check("自己剩 3 血不放地獄烈焰", !plan.Contains("地獄烈焰"), string.IsNullOrEmpty(plan) ? "（結束回合）" : plan);
+			}
+			// 16g. v0.9.5 讀卡擴充：召喚、抽牌、發現、全體增益、全場傷害（所有敵人）、英雄加攻
+			{
+				var ai = Spell(3, "Draw 2 cards.", "秘法智慧");
+				Check("秘法智慧：抽 2", ai.Draw == 2 && ai.Target == TargetKind.None);
+				var mi = Spell(1, "Summon two 0/2 minions with <b>Taunt</b>.", "鏡像");
+				Check("鏡像：召喚 2 隻 0/2", mi.SumN == 2 && mi.SumA == 0 && mi.SumH == 2);
+				var cs = Spell(4, "Deal $2 damage to all enemies.", "奉獻");
+				Check("奉獻：全場 2 傷（所有敵人）", cs.AoE && cs.Damage == 2);
+				var hs = Spell(2, "Give your hero +4 Attack this turn.", "英勇打擊");
+				Check("英勇打擊：英雄 +4 攻", hs.HeroAtk == 4);
+				var dis = Spell(1, "<b>Discover</b> a spell.", "發現法術");
+				Check("發現：+1 張牌", dis.Gen == 1);
+				var bl = Spell(2, "Give your minions +1/+1.", "全體增益");
+				Check("全體增益：+1/+1", bl.BuffAllA == 1 && bl.BuffAllH == 1);
+				Check("選一個手下＋之後消滅 → 對敵", Spell(1, "Choose a minion. Destroy it after your hero takes damage.", "縱火指控").Target == TargetKind.EnemyMinion);
+				Check("選一個手下＋每當它攻擊 → 對友", Spell(1, "Choose a minion. Whenever it attacks, draw a card.", "智慧祝福").Target == TargetKind.FriendlyMinion);
+				Check("對手抽牌不算我抽", Spell(1, "Your opponent draws 2 cards.", "x").Draw == 0);
+
+				var s = Board(4, new Ent[0], new[] { Minion(2, 2), Minion(1, 2), Minion(2, 1) }, new[] { cs }, oppHp: 2);
+				var act = Decide(s, out var plan);
+				Check("奉獻清場兼打臉 2 點 → 斬殺", act?.Source?.Id == cs.Id, plan);
+				var s2 = Board(1, new[] { Minion(2, 2) }, new[] { Minion(4, 4), Minion(4, 3) }, new[] { mi });
+				Decide(s2, out var p2);
+				Check("被壓制時下鏡像擋", p2.Contains("鏡像"), p2);
+				var s3 = Board(2, new[] { Minion(2, 2), Minion(2, 2), Minion(2, 2) }, new Ent[0], new[] { hs, bl }, oppHp: 7);
+				Decide(s3, out var p3);
+				Check("全體 +1/+1 後三隻 3 攻 + 英勇打擊 → 算出斬殺路線", p3.Contains("全體增益") || p3.Contains("英勇打擊"), p3);
 			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{
@@ -781,7 +888,7 @@ namespace HsHelper.Tests
 			{
 				InGame = true, MyTurn = true, MainAction = true, Mana = me.Mana,
 				MyHero = me.Hero, OppHero = op.Hero, MyHeroPower = me.HeroPowerUsed ? null : me.Power,
-				MyBoard = me.Board.ToList(), OppBoard = op.Board.ToList(), Hand = me.Hand.ToList(),
+				MyBoard = me.Board.ToList(), OppBoard = op.Board.ToList(), Hand = me.Hand.ToList(), OppMana = op.MaxMana, Deck = me.Deck.ToList(),
 				HasCoin = me.Hand.Any(c => c.IsCoin)
 			};
 		}
