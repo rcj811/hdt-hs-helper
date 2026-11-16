@@ -276,6 +276,16 @@ namespace HsHelper.Tests
 					!Planner.ShouldReplace(hand[0], hand, false) && Planner.ShouldReplace(hand[1], hand, false) && Planner.ShouldReplace(hand[2], hand, false));
 				Check("換牌：後手有低費牌時留一張 4 費", !Planner.ShouldReplace(hand[1], hand, true));
 			}
+			// 16a. 實測：0 費法術一直沒出
+			{
+				var free = Spell(0, "Gain 1 Mana Crystal this turn only.", "0費法術");
+				var s = Board(0, new Ent[0], new Ent[0], new[] { free });
+				var act = Decide(s, out var plan);
+				Check("0 費法術會打出（沒水晶時也一樣）", act?.Source?.Id == free.Id, string.IsNullOrEmpty(plan) ? "（結束回合）" : plan);
+				var wisp = Card(0, 1, 1, "0費1/1");
+				var s2 = Board(0, new Ent[0], new Ent[0], new[] { wisp });
+				Check("0 費手下會打出", Decide(s2, out var p2)?.Source?.Id == wisp.Id, p2);
+			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{
 				var silence = Spell(1, "<b>Silence</b> a minion.", "沉默術");

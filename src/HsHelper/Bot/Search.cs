@@ -336,7 +336,8 @@ namespace HsHelper.Bot
 				{
 					var d = Draw.Match(text);
 					var draws = d.Success ? (d.Groups[1].Value == "a" ? 1 : int.Parse(d.Groups[1].Value)) : 0;
-					n.Bonus += 4 + c.Cost * 3 + draws * 3;
+					// 看不懂效果的法術：價值至少比「留在手上」高一點（v0.9.1：0 費法術原本只值 4 分 < 手牌 5.6 分，一直不出）
+					n.Bonus += Math.Max(4 + c.Cost * 3 + draws * 3, W.HandCard + 1 + c.Cost * 3);
 					var ar = Armor.Match(text);
 					if(ar.Success) n.Me.Armor += int.Parse(ar.Groups[1].Value);
 					if(c.Damage > 0 && text.IndexOf("enemy hero", StringComparison.OrdinalIgnoreCase) >= 0)
