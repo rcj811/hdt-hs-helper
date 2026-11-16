@@ -15,7 +15,7 @@ namespace HsHelper.Bot
 
 		// 敘述中出現「選一個 X」的寫法 → 需要目標
 		private static readonly Regex Targeted = new Regex(
-			@"\b(a|an|another) (damaged |undamaged |friendly |enemy |other |frozen )*(minion|character|beast|demon|dragon|mech|murloc|pirate|elemental|undead|naga|totem)\b", O);
+			@"\b(a|an|another) (damaged |undamaged |friendly |enemy |other |frozen )*(minion|character|enemy|beast|demon|dragon|mech|murloc|pirate|elemental|undead|naga|totem)\b", O);
 
 		public static void Classify(Ent e, bool isHeroPower = false)
 		{
@@ -47,6 +47,8 @@ namespace HsHelper.Bot
 				e.Target = TargetKind.FriendlyAny;
 			else if(dm.Success)
 				e.Target = Has("minion") ? TargetKind.EnemyMinion : TargetKind.EnemyAny;
+			else if(Has("freeze") && !Has("minion"))
+				e.Target = TargetKind.EnemyAny; // 「冰凍一個敵人」可以選英雄
 			else if(Has("destroy") || Has("transform") || Has("silence") || Has("freeze") || Has("return") || Has("enemy"))
 				e.Target = TargetKind.EnemyMinion;
 			else

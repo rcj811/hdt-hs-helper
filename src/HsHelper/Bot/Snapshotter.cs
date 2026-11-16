@@ -107,6 +107,23 @@ namespace HsHelper.Bot
 
 			s.EndTurn = P(W / 2 + H * 0.556, H * 0.454);
 			s.BoardDrop = P(W / 2 + (s.MyBoard.Count / 2.0 + 0.5) * slot, myRowY);
+
+			// 各種張數的排版（用遊戲記憶體讀到的即時張數來選，避免 HDT 資料延遲時位置算錯）
+			for(var n = 1; n <= 10; n++)
+			{
+				var l = new List<Point>();
+				for(var i = 0; i < n; i++)
+				{
+					var hp2 = ow.GetPlayerCardPosition(i, n);
+					l.Add(P(hp2.X, hp2.Y));
+				}
+				s.HandLayouts[n] = l;
+			}
+			for(var n = 1; n <= 8; n++)
+			{
+				s.MyRow[n] = Enumerable.Range(0, n).Select(i => P(W / 2 + (i - (n - 1) / 2.0) * slot, myRowY)).ToList();
+				s.OppRow[n] = Enumerable.Range(0, n).Select(i => P(W / 2 + (i - (n - 1) / 2.0) * slot, oppRowY)).ToList();
+			}
 			s.BoardCenter = P(W / 2 + H * 0.05, H * 0.50);
 			s.Neutral = P(W / 2 + H * 0.45, H * 0.62);
 

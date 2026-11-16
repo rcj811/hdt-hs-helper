@@ -113,5 +113,18 @@ namespace HsHelper.Bot
 		}
 
 		public static void Hover(Point p) => MoveTo(J(p, 10), 10);
+
+		/// <summary>把滑鼠移到某點（不按），用來先指著手牌確認是哪張。</summary>
+		public static void MoveSlow(Point p) => MoveTo(J(p, 3), 14);
+
+		/// <summary>在目前位置按下，拖到目標放開。</summary>
+		public static void PressAndDrag(Point to)
+		{
+			mouse_event(LeftDown, 0, 0, 0, UIntPtr.Zero);
+			Pause(120, 220);
+			MoveTo(J(to), 22);
+			Pause(150, 280);
+			mouse_event(LeftUp, 0, 0, 0, UIntPtr.Zero);
+		}
 	}
 }

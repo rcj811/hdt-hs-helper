@@ -26,7 +26,7 @@ namespace HsHelper
 		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 7, 1);
+		public Version Version => new Version(0, 8, 0);
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()

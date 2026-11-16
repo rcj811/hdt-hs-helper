@@ -30,6 +30,7 @@ namespace HsHelper.Bot
 			[DataMember(Order = 3)] public List<string> MirrorMethods = new List<string>();
 			[DataMember(Order = 4)] public List<string> GameTypes = new List<string>();
 			[DataMember(Order = 5)] public List<string> Keywords = new List<string>();
+			[DataMember(Order = 6)] public string PluginVersion = "";
 		}
 
 		public static readonly string KnownPath = Path.Combine(AutoPlayer.DataDir, "known-mechanics.json");
@@ -238,25 +239,24 @@ namespace HsHelper.Bot
 					}
 					SaveReport();
 				}
-				// v0.7.1：舊版「出牌後仍在手上」是確認太早造成的誤判，「Hero Power」也不是新機制 → 自動標記已處理
+				// 外掛更新後第一次啟動：舊版記錄的「出牌／攻擊失敗」多是舊版的拖曳或判斷問題（已在新版修正），標記已處理
 				if(!k.Keywords.Contains("hero power")) k.Keywords.Add("hero power");
-				var migrated = 0;
-				foreach(var e in Report_.Entries.Where(e => !e.Resolved))
+				var pv = PluginVersion;
+				if(!firstRun && k.PluginVersion != pv)
 				{
-					var falsePlayFail = e.Kind == MechKind.PlayFail && e.Details.Count > 0 && e.Details.All(d => d.Contains("後仍在手上"))
-					                    && string.CompareOrdinal(e.LastSeen, "2026-11-16 12:00") < 0;
-					var heroPowerKw = e.Kind == MechKind.Keyword && e.Key == "hero power";
-					if(falsePlayFail || heroPowerKw)
+					var migrated = 0;
+					foreach(var e in Report_.Entries.Where(e => !e.Resolved && (e.Kind == MechKind.PlayFail || (e.Kind == MechKind.Keyword && e.Key == "hero power"))))
 					{
 						e.Resolved = true;
 						migrated++;
 					}
+					if(migrated > 0)
+					{
+						SaveReport();
+						messages.Add($"外掛已更新到 {pv}：舊版記錄的 {migrated} 項出牌／攻擊失敗已在新版修正，標記為已處理（再發生會重新記錄）");
+					}
 				}
-				if(migrated > 0)
-				{
-					SaveReport();
-					messages.Add($"已修正：舊版報告中 {migrated} 項「打不出來的卡／新關鍵字」是誤判（確認太早），已標記為已處理");
-				}
+				k.PluginVersion = pv;
 
 				k.HdtVersion = hdtVersion;
 				k.GameTagCount = tagCount;

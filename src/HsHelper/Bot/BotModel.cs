@@ -63,6 +63,10 @@ namespace HsHelper.Bot
 		public List<Ent> MyBoard = new List<Ent>();
 		public List<Ent> OppBoard = new List<Ent>();
 		public List<Ent> Offered = new List<Ent>();
+		/// <summary>手牌 n 張時，第 i 張的螢幕位置（n = 1～10）。</summary>
+		public Dictionary<int, List<Point>> HandLayouts = new Dictionary<int, List<Point>>();
+		/// <summary>板面 n 隻時，第 i 隻的螢幕位置（n = 1～8）。</summary>
+		public Dictionary<int, List<Point>> MyRow = new Dictionary<int, List<Point>>(), OppRow = new Dictionary<int, List<Point>>();
 		public bool OfferedDarkGift;
 		public Ent MyHero, OppHero, MyHeroPower, MyWeapon;
 		public bool HasCoin;

@@ -18,6 +18,9 @@ namespace HsHelper.Bot
 				return true;                                   // 已經在場上（手牌資料還沒更新）
 			if(card.Kind == Kind.Weapon && after.MyWeapon?.Id == card.Id)
 				return true;                                   // 武器已裝備
+			if(before != null && !string.IsNullOrEmpty(card.CardId)
+			   && after.Hand.Count(h => h.CardId == card.CardId) < before.Hand.Count(h => h.CardId == card.CardId))
+				return true;                                   // 同名牌少了一張（拖到的是另一張同名牌也算成功）
 			if(card.Cost > 0 && before != null && after.Mana <= before.Mana - card.Cost)
 				return true;                                   // 法力已扣
 			return false;

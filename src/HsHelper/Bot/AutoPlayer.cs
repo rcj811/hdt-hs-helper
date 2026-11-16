@@ -263,7 +263,7 @@ namespace HsHelper.Bot
 			{
 				_skip.Clear();
 				_skipTurn = s.Turn;
-				Input.Pause(1200, 2000); // 回合開始動畫
+				Input.Pause(800, 1200); // 回合開始動畫
 				return;
 			}
 
@@ -281,6 +281,14 @@ namespace HsHelper.Bot
 				ChooseOffered(s);
 				return;
 			}
+
+			if(!Settled(s))
+			{
+				Status = "等待畫面穩定…";
+				Thread.Sleep(250);
+				return;
+			}
+			_unsettledSince = DateTime.MinValue;
 
 			ApplyLearning(s);
 			BotAction action;
@@ -543,15 +551,19 @@ namespace HsHelper.Bot
 		// ───────── 執行動作 ─────────
 		private void Execute(Snapshot s, BotAction a)
 		{
-			// 像真人一樣先「想一下」：每個動作前隨機等 0.5～2 秒
-			Status = "思考中…（" + a.Describe + "）";
-			Input.Pause(500, 2001);
+			if(a.Type != ActionType.EndTurn)
+			{
+				// 像真人一樣先「想一下」：每個動作前隨機等 0.2～0.6 秒
+				Status = "思考中…（" + a.Describe + "）";
+				Input.Pause(200, 601);
+			}
 			Status = a.Describe;
 
 			switch(a.Type)
 			{
 				case ActionType.EndTurn:
-					Input.Pause(900, 1600);
+					// 沒有可做的動作（例如沒水晶）：馬上按結束回合
+					Input.Pause(150, 400);
 					Input.Click(s.EndTurn);
 					_endTurnAttempts++;
 					WaitUntil(x => !x.MyTurn, 5000);
@@ -572,18 +584,23 @@ namespace HsHelper.Bot
 					break;
 			}
 			Input.Hover(s.Neutral);
-			Input.Pause(1200, 2000); // 放慢：每個動作之間停 1.2～2 秒
+			Input.Pause(300, 600); // 之後由 Settled() 等畫面穩定再做下一步
 		}
 
 		private void PlayCard(Snapshot s, BotAction a)
 		{
 			var c = a.Source;
-			if(c.Kind == Kind.Spell && a.Target != null)
-				Input.Drag(c.Screen, a.Target.Screen); // 指定目標法術：直接拖到目標上
-			else if(c.Kind == Kind.Minion)
-				Input.Drag(c.Screen, s.BoardDrop);
-			else
-				Input.Drag(c.Screen, s.BoardCenter);
+			// 先把滑鼠指到那張牌，讀遊戲記憶體確認放大的是它，才按下拖曳（避免拖到旁邊的牌）
+			if(!PickFromHand(s, c))
+			{
+				_skip.Add(c.Id);
+				Log.Info($"Hand pick failed: {c.Name}");
+				MechanicMonitor.PlayFailure(c.Id, c.Name, "手牌中指不到這張牌（已逐格確認，遊戲記憶體中找不到相同卡牌）");
+				return;
+			}
+			var dest = c.Kind == Kind.Spell && a.Target != null ? a.Target.Screen   // 指定目標法術：直接拖到目標上
+				: c.Kind == Kind.Minion ? s.BoardDrop : s.BoardCenter;
+			Input.PressAndDrag(dest);
 
 			// 等結算：牌離開手牌／出現在場上／法力已扣，任一成立就算成功（HDT log 有延遲）
 			var before = s;
@@ -664,6 +681,97 @@ namespace HsHelper.Bot
 			}
 			else
 				Input.Pause(600, 1000); // 攻擊動畫
+		}
+
+		/// <summary>
+		/// 指到手牌並確認：滑鼠移到估計位置 → 讀遊戲記憶體「目前放大的牌」→ 對了就回傳 true（游標停在牌上）。
+		/// 不對就依「指到的牌在 HDT 手牌中的位置」推算偏移，往正確方向逐格找，最多 10 次。
+		/// 讀不到記憶體（舊版 HearthMirror）時退回原本做法。
+		/// </summary>
+		private bool PickFromHand(Snapshot s, Ent c)
+		{
+			var idx = s.Hand.FindIndex(h => h.Id == c.Id);
+			var n = Math.Max(1, Math.Min(10, s.Hand.Count));
+			if(idx < 0 || !s.HandLayouts.ContainsKey(n))
+				return false;
+			Point At(int size, int i) => s.HandLayouts[Math.Max(1, Math.Min(10, size))][Math.Max(0, Math.Min(size - 1, i))];
+
+			Input.MoveSlow(At(n, idx));
+			Thread.Sleep(260);
+			var big = LiveState.ReadBigCard();
+			if(big == null)
+				return true; // 讀不到即時資料：照舊直接拖
+
+			var tried = new HashSet<int>();
+			for(var attempt = 0; attempt < 10; attempt++)
+			{
+				if(big.IsHand && big.CardId == c.CardId)
+					return true;
+				var liveN = big.IsHand && big.ZoneSize > 0 ? Math.Min(10, big.ZoneSize) : n;
+				var cur = big.IsHand ? big.ZonePosition - 1 : -1;
+				if(cur >= 0) tried.Add(cur);
+
+				// 推算：指到的牌在 HDT 手牌的位置 vs 實際位置 → 偏移量
+				var predicted = Math.Min(idx, liveN - 1);
+				if(cur >= 0)
+				{
+					var hdtIdx = s.Hand.Select((h, i) => (h, i)).Where(x => x.h.CardId == big.CardId)
+						.OrderBy(x => Math.Abs(x.i - cur)).Select(x => x.i).DefaultIfEmpty(-1).First();
+					if(hdtIdx >= 0)
+						predicted = Math.Max(0, Math.Min(liveN - 1, idx + (cur - hdtIdx)));
+				}
+				var next = Enumerable.Range(0, liveN).Where(k => !tried.Contains(k))
+					.OrderBy(k => Math.Abs(k - predicted)).DefaultIfEmpty(-1).First();
+				if(next < 0)
+					return false;
+				tried.Add(next);
+				Input.MoveSlow(At(liveN, next));
+				Thread.Sleep(260);
+				big = LiveState.ReadBigCard();
+				if(big == null)
+					return false;
+			}
+			return false;
+		}
+
+		private string _lastSig = "";
+		private int _offsetMine, _offsetTheirs, _offsetMisses;
+		private DateTime _unsettledSince = DateTime.MinValue;
+
+		/// <summary>
+		/// 畫面穩定才行動：HDT 讀到的狀態連續兩次相同，且場上數量跟遊戲記憶體一致（召喚動畫結束）。
+		/// 最多等 3 秒，超過就照目前狀態行動，避免卡住。
+		/// </summary>
+		private bool Settled(Snapshot s)
+		{
+			var sig = string.Join(",", s.Hand.Select(h => h.Id)) + "|" + string.Join(",", s.MyBoard.Select(m => m.Id + ":" + m.Hp))
+			          + "|" + string.Join(",", s.OppBoard.Select(m => m.Id + ":" + m.Hp)) + "|" + s.Mana + "|" + s.Offered.Count;
+			var mine = LiveState.ReadBoard(true);
+			var theirs = LiveState.ReadBoard(false);
+			var dMine = mine == null ? 0 : mine.Count - s.MyBoard.Count - _offsetMine;
+			var dTheirs = theirs == null ? 0 : theirs.Count - s.OppBoard.Count - _offsetTheirs;
+			var countsOk = dMine == 0 && dTheirs == 0;
+			var stable = sig == _lastSig;
+			_lastSig = sig;
+			if(stable && countsOk)
+			{
+				_unsettledSince = DateTime.MinValue;
+				_offsetMisses = 0;
+				return true;
+			}
+			if(_unsettledSince == DateTime.MinValue)
+				_unsettledSince = DateTime.Now;
+			if((DateTime.Now - _unsettledSince).TotalSeconds <= 3)
+				return false;
+			// 等了 3 秒狀態都沒變但數量還是對不上：可能是記憶體清單多算了別的東西，連續 2 次就記成固定差值
+			if(stable && !countsOk && ++_offsetMisses >= 2)
+			{
+				_offsetMine += dMine;
+				_offsetTheirs += dTheirs;
+				_offsetMisses = 0;
+				Log.Info($"LiveBoard offset learned: mine {_offsetMine}, theirs {_offsetTheirs}");
+			}
+			return true;
 		}
 
 		private static Ent FindById(Snapshot s, int id) =>

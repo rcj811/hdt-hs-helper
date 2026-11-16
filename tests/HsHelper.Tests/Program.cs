@@ -244,6 +244,17 @@ namespace HsHelper.Tests
 					!Planner.ShouldReplace(hand[0], hand, false) && Planner.ShouldReplace(hand[1], hand, false) && Planner.ShouldReplace(hand[2], hand, false));
 				Check("換牌：後手有低費牌時留一張 4 費", !Planner.ShouldReplace(hand[1], hand, true));
 			}
+			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
+			{
+				var silence = Spell(1, "<b>Silence</b> a minion.", "沉默術");
+				var bolt = Spell(3, "Deal $3 damage to a minion.", "火焰箭");
+				var s = Board(4, new Ent[0], new Ent[0], new[] { silence, bolt }, oppHp: 30);
+				var act = Decide(s, out var plan);
+				Check("場上沒手下：不出只能選手下的法術", !plan.Contains("沉默術") && !plan.Contains("火焰箭"), string.IsNullOrEmpty(plan) ? "（結束回合）" : plan);
+				var s2 = Board(4, new Ent[0], new[] { Minion(4, 3, "4/3") }, new[] { bolt }, oppHp: 30);
+				Decide(s2, out var plan2);
+				Check("有手下時才用它解場", plan2.Contains("火焰箭"), plan2);
+			}
 			// 17. 卡牌敘述解析
 			{
 				Check("解析「Deal 3 damage to a minion」→ 敵方手下", Spell(1, "Deal $3 damage to a minion.", "x").Target == TargetKind.EnemyMinion);
@@ -253,6 +264,9 @@ namespace HsHelper.Tests
 				Check("解析火球術「Deal 6 damage」→ 敵方任意目標", Spell(4, "Deal $6 damage.", "f").Target == TargetKind.EnemyAny);
 				Check("解析「Deal 2 damage to all minions」→ AOE 不需目標", Spell(4, "Deal 2 damage to all minions.", "g") is var g && g.Target == TargetKind.None && g.AoE);
 				Check("解析獵人英雄技能 → 不需目標", HeroPower("Deal 2 damage to the enemy hero.").Target == TargetKind.None);
+				Check("解析冰川裂片「Freeze an enemy」→ 需要目標（可選英雄）", Spell(1, "<b>Battlecry:</b> <b>Freeze</b> an enemy.", "h").Target == TargetKind.EnemyAny);
+				Check("解析「Silence a minion」→ 只能選手下", Spell(1, "<b>Silence</b> a minion.", "i").Target == TargetKind.EnemyMinion);
+				Check("解析「Deal 3 damage to a minion」→ 只能選手下", Spell(3, "<b>Lifesteal</b> Deal $3 damage to a minion. If it dies, return this to your hand.", "j").Target == TargetKind.EnemyMinion);
 			}
 		}
 
@@ -278,6 +292,12 @@ namespace HsHelper.Tests
 
 			var otherPlayed = Board(3, new[] { other }, new Ent[0], new[] { croc });
 			Check("扣的是別張牌的法力（不夠扣這張）→ 不誤判", !Verify.PlayResolved(before, otherPlayed, croc));
+
+			var croc2 = Card(2, 2, 3, "淡水鱷");
+			croc2.CardId = croc.CardId;
+			var twoCrocs = Board(4, new Ent[0], new Ent[0], new[] { croc, croc2 });
+			var otherCopyPlayed = Board(4, new Ent[0], new Ent[0], new[] { croc });
+			Check("拖到另一張同名牌也算成功", Verify.PlayResolved(twoCrocs, otherCopyPlayed, croc2));
 
 			var hp = HeroPower("Deal 2 damage to the enemy hero.");
 			var hpBefore = Board(2, new Ent[0], new Ent[0], heroPower: hp);
