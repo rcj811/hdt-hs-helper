@@ -5,7 +5,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>HsHelper</AssemblyName>
     <RootNamespace>HsHelper</RootNamespace>
-    <Version>0.8.2</Version>
+    <Version>0.8.3</Version>
     <PlatformTarget>x64</PlatformTarget>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- HDT 的參考檔由 scripts/fetch-hdt-refs.ps1 從官方發行版下載到這裡，不放進 repo -->

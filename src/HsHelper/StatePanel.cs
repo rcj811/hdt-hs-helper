@@ -47,7 +47,7 @@ namespace HsHelper
 			Visibility = Visibility.Visible;
 			_stack.Children.Clear();
 
-			Add(s.IsBattlegrounds ? "爐石輔助・酒館戰棋" : "爐石輔助・對戰", TitleBrush, 14, true);
+			Add((s.IsBattlegrounds ? "爐石輔助・酒館戰棋" : "爐石輔助・對戰") + "  " + HsHelperPlugin.VersionText, TitleBrush, 14, true);
 			Add($"回合 {s.Turn}", DimBrush);
 			if(!s.IsBattlegrounds)
 			{

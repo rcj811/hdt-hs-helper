@@ -22,11 +22,15 @@ namespace HsHelper
 		private DateTime _lastRefresh = DateTime.MinValue;
 		private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(500);
 
-		public string Name => "爐石輔助 HsHelper";
+		/// <summary>版本號只在 HsHelper.csproj 的 &lt;Version&gt; 設定一次，這裡直接讀編譯出來的版本，不會不一致。</summary>
+		public static readonly Version PluginVersion = typeof(HsHelperPlugin).Assembly.GetName().Version;
+		public static string VersionText => $"v{PluginVersion.Major}.{PluginVersion.Minor}.{PluginVersion.Build}";
+
+		public string Name => $"爐石輔助 HsHelper {VersionText}";
 		public string Description => "即時顯示遊戲狀態；按 F8 開始／停止自動出牌（構築／練習模式）。";
 		public string ButtonText => "顯示／隱藏面板";
 		public string Author => "rcj811";
-		public Version Version => new Version(0, 8, 2);
+		public Version Version => PluginVersion;
 		public MenuItem MenuItem => _menuItem;
 
 		public void OnLoad()
@@ -41,7 +45,7 @@ namespace HsHelper
 				PositionPanel();
 				ApiCore.OverlayCanvas.SizeChanged += (s, e) => PositionPanel();
 
-				_menuItem = new MenuItem { Header = "爐石輔助" };
+				_menuItem = new MenuItem { Header = $"爐石輔助 {VersionText}" };
 				var panelItem = new MenuItem { Header = "顯示／隱藏面板" };
 				panelItem.Click += (s, e) => TogglePanel();
 				var autoItem = new MenuItem { Header = "自動出牌 開始／停止（F8）" };
@@ -87,7 +91,10 @@ namespace HsHelper
 					try { MechanicMonitor.CheckOnStartup(); } catch(Exception ex) { Log.Error(ex); }
 				});
 
-				Log.Info("HsHelper loaded");
+				Log.Info($"HsHelper {VersionText} loaded");
+				// 啟動提示：確認更新到的版本
+				System.Threading.Tasks.Task.Delay(4000).ContinueWith(_ => System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+					_toast?.Show($"爐石輔助 {VersionText} 已載入", Color.FromRgb(0x6B, 0xC5, 0xF8), false, 22, 4))));
 			}
 			catch(Exception ex)
 			{
