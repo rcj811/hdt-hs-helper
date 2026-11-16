@@ -129,7 +129,9 @@ namespace HsHelper.Bot
 			{
 				Source = "real", OppClass = s.OppClass ?? "", OppCards = s.OppCards ?? new List<string>(),
 				Won = s.Won, Style = (int)_style, OppTurns = _oppTurns, FaceDmgTaken = _faceTaken,
-				DeckId = s.DeckId, DeckName = s.DeckName ?? "",
+				// HDT 在某些模式（例如練習）不會記錄本場套牌 → 用選套牌畫面讀到的
+				DeckId = s.DeckId != 0 ? s.DeckId : _menuDeckId,
+				DeckName = !string.IsNullOrEmpty(s.DeckName) ? s.DeckName : _menuDeckName,
 				MaxBurst = _maxBurst, AoeEvents = _aoe
 			};
 			try
@@ -152,6 +154,8 @@ namespace HsHelper.Bot
 		/// <summary>開始下一場前，自動選預估勝率最高的套牌。</summary>
 		public bool AutoDeck { get; set; } = true;
 		private bool _deckReady;
+		private long _menuDeckId;
+		private string _menuDeckName = "";
 		private int _deckClickTries;
 		private DateTime _lastPlayClick = DateTime.MinValue;
 		private int _playClicks;
@@ -396,6 +400,8 @@ namespace HsHelper.Bot
 					string reason;
 					lock(DbLock)
 						best = DeckChooser.Choose(page.Decks, Db, out reason);
+					var sel = page.Decks.FirstOrDefault(d => d.Id == page.Selected);
+					if(sel != null) { _menuDeckId = sel.Id; _menuDeckName = sel.Name; }
 					if(best == null || page.Selected == best.Id)
 					{
 						_deckReady = true;

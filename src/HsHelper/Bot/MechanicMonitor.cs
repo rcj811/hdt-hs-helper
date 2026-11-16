@@ -245,7 +245,8 @@ namespace HsHelper.Bot
 				if(!firstRun && k.PluginVersion != pv)
 				{
 					var migrated = 0;
-					foreach(var e in Report_.Entries.Where(e => !e.Resolved && (e.Kind == MechKind.PlayFail || (e.Kind == MechKind.Keyword && e.Key == "hero power"))))
+					foreach(var e in Report_.Entries.Where(e => !e.Resolved && (e.Kind == MechKind.PlayFail
+						|| (e.Kind == MechKind.Keyword && BuiltInKeywords.Contains(Normalize(e.Key))))))
 					{
 						e.Resolved = true;
 						migrated++;
@@ -253,7 +254,7 @@ namespace HsHelper.Bot
 					if(migrated > 0)
 					{
 						SaveReport();
-						messages.Add($"外掛已更新到 {pv}：舊版記錄的 {migrated} 項出牌／攻擊失敗已在新版修正，標記為已處理（再發生會重新記錄）");
+						messages.Add($"外掛已更新到 {pv}：舊版記錄的 {migrated} 項已在新版修正，標記為已處理（再發生會重新記錄）");
 					}
 				}
 				k.PluginVersion = pv;
@@ -403,7 +404,7 @@ namespace HsHelper.Bot
 
 		private static string Normalize(string kw)
 		{
-			kw = Regex.Replace(kw, @"[\d\$#:：\+\-/()]+", " ").Trim().ToLowerInvariant();
+			kw = Regex.Replace(kw, @"[\d\$#:：\+\-/().,!?。，！]+", " ").Trim().ToLowerInvariant();
 			return Regex.Replace(kw, @"\s+", " ");
 		}
 
