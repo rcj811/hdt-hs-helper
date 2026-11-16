@@ -199,14 +199,12 @@ namespace HsHelper.Bot
 			var left = a.MaxAttacks - a.AttacksThisTurn;
 			if(left <= 0)
 				return 0;
-			if(!a.Exhausted || a.Charge)
-				return left;
-			if(a.Rush && a.TurnsInPlay == 0 && a.AttacksThisTurn == 0)
+			if(a.Kind == Kind.Minion && a.Rush && !a.Charge && a.TurnsInPlay == 0)
 			{
-				minionsOnly = true;
+				minionsOnly = true; // 突襲：上場當回合只能打手下（實測突襲手下沒有疲勞標記，要先判斷）
 				return left;
 			}
-			return 0;
+			return !a.Exhausted || a.Charge ? left : 0;
 		}
 
 		// ───────── 產生下一步 ─────────

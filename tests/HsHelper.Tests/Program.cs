@@ -217,6 +217,32 @@ namespace HsHelper.Tests
 				var act = Decide(s, out var plan);
 				Check("突襲剛上場不打臉", act == null || act.Target?.Id != s.OppHero.Id, plan);
 			}
+			// 12b. 實測報告：突襲手下沒有疲勞標記，仍不能打臉
+			{
+				var rush = Minion(3, 1, "紅鰓刃顎魚人", canAttack: true);
+				rush.Rush = true; rush.TurnsInPlay = 0; rush.Exhausted = false;
+				var s = Board(0, new[] { rush }, new Ent[0], oppHp: 3);
+				var act = Decide(s, out var plan);
+				Check("突襲手下（沒有疲勞標記）剛上場不打臉", act == null || act.Target?.Id != s.OppHero.Id, string.IsNullOrEmpty(plan) ? "（結束回合）" : plan);
+				var e = Minion(4, 2, "4/2威脅");
+				var s2 = Board(0, new[] { rush }, new[] { e }, oppHp: 30);
+				var act2 = Decide(s2, out var plan2);
+				Check("突襲手下剛上場可以去解敵方手下", act2?.Target?.Id == e.Id, plan2);
+			}
+			// 12c. 實測報告：冰川裂片「冰凍一個敵人」選目標，不能放棄
+			{
+				var shard = Spell(1, "<b>Battlecry:</b> <b>Freeze</b> an enemy.", "冰川裂片");
+				shard.Kind = Kind.Minion;
+				var big = Minion(5, 5, "5/5"); var small = Minion(1, 1, "1/1");
+				var s = Board(1, new Ent[0], new[] { small, big }, new[] { shard });
+				Check("冰凍戰吼：凍攻擊力最高的敵方手下", Planner.PickAnyTarget(s, shard, shard.Target)?.Id == big.Id);
+				var s2 = Board(1, new Ent[0], new Ent[0], new[] { shard });
+				Check("冰凍戰吼：沒有敵方手下就凍英雄（不取消）", Planner.PickAnyTarget(s2, shard, shard.Target)?.Id == s2.OppHero.Id);
+				var silencer = Spell(4, "<b>Battlecry:</b> <b>Silence</b> a minion.", "皇家圖書管理員");
+				silencer.Kind = Kind.Minion;
+				var s3 = Board(4, new Ent[0], new[] { small }, new[] { silencer });
+				Check("消音戰吼：沒有好目標也要選一個合法目標", Planner.PickAnyTarget(s3, silencer, silencer.Target) != null);
+			}
 			// 13. 衝鋒手下打出來馬上斬殺
 			{
 				var charger = Card(3, 4, 2, "衝鋒4/2", charge: true);

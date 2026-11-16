@@ -642,7 +642,7 @@ namespace HsHelper.Bot
 			{
 				var now = Read();
 				var kind = c.Target != TargetKind.None && c.Target != TargetKind.Unknown ? c.Target : TargetKind.EnemyAny;
-				var t = Planner.PickTarget(now, c, kind);
+				var t = Planner.PickAnyTarget(now, c, kind); // 一定要選一個，取消會把整張牌退回
 				var target = t != null ? FindById(now, t.Id) : null;
 				if(target != null)
 				{
@@ -797,7 +797,10 @@ namespace HsHelper.Bot
 			if(hp != null && !hp.Exhausted && hp.Cost <= s.Mana && !_skip.Contains(hp.Id))
 				return false;
 			bool CanAttack(Ent a) => a != null && !_skip.Contains(a.Id) && a.Atk > 0 && !a.Frozen && !a.CantAttack && !a.Dormant
-			                         && a.AttacksThisTurn < a.MaxAttacks && (!a.Exhausted || a.Charge || (a.Rush && a.TurnsInPlay == 0 && s.OppBoard.Count > 0));
+			                         && a.AttacksThisTurn < a.MaxAttacks
+			                         && (a.Kind == Kind.Minion && a.Rush && !a.Charge && a.TurnsInPlay == 0
+				                         ? s.OppBoard.Any(m => m.Kind == Kind.Minion && !m.Stealth)   // 突襲當回合只能打手下
+				                         : !a.Exhausted || a.Charge);
 			if(s.MyBoard.Any(m => m.Kind == Kind.Minion && CanAttack(m)) || CanAttack(s.MyHero))
 				return false;
 			return true;

@@ -56,14 +56,12 @@ namespace HsHelper.Bot
 			minionsOnly = false;
 			if(a == null || a.Atk <= 0 || a.Frozen || a.CantAttack || a.Dormant || a.AttacksThisTurn >= a.MaxAttacks)
 				return false;
-			if(!a.Exhausted || a.Charge)
-				return true;
-			if(a.Rush && a.TurnsInPlay == 0 && a.AttacksThisTurn == 0)
+			if(a.Kind == Kind.Minion && a.Rush && !a.Charge && a.TurnsInPlay == 0)
 			{
-				minionsOnly = true; // 突襲：上場當回合只能打手下
+				minionsOnly = true; // 突襲：上場當回合只能打手下（實測突襲手下沒有疲勞標記，要先判斷）
 				return true;
 			}
-			return false;
+			return !a.Exhausted || a.Charge;
 		}
 
 		private static IEnumerable<(Ent a, bool minionsOnly)> Attackers(Snapshot s, ISet<int> skip)
@@ -265,6 +263,14 @@ namespace HsHelper.Bot
 							return s.OppHero;
 						return enemies.OrderByDescending(e => e.Atk).FirstOrDefault();
 					}
+					if((card.Text ?? "").IndexOf("freeze", StringComparison.OrdinalIgnoreCase) >= 0)
+					{
+						// 冰凍：凍住攻擊力最高、還沒被凍的敵方手下；沒有就凍英雄
+						var f = enemies.Where(e => !e.Frozen && e.Atk > 0).OrderByDescending(e => e.Atk).FirstOrDefault();
+						if(f != null)
+							return f;
+						return kind == TargetKind.EnemyAny && s.OppHero != null && !s.OppHero.Immune ? s.OppHero : enemies.FirstOrDefault();
+					}
 					// 消滅／變形等：留給有價值的目標
 					return enemies.Where(e => e.Value >= 5).OrderByDescending(e => e.Value).FirstOrDefault();
 				case TargetKind.FriendlyMinion:
@@ -274,6 +280,33 @@ namespace HsHelper.Bot
 					return s.MyHero != null && s.MyHero.Hp < 25 ? s.MyHero : hurt ?? s.MyHero;
 				default:
 					return null;
+			}
+		}
+
+		/// <summary>
+		/// 戰吼手下已經放下、遊戲在等選目標時用：一定要選一個合法目標（取消的話整張牌會被退回）。
+		/// 先用 PickTarget 的好目標，沒有就挑「傷害最小」的合法目標。
+		/// </summary>
+		public static Ent PickAnyTarget(Snapshot s, Ent card, TargetKind kind)
+		{
+			var good = PickTarget(s, card, kind);
+			if(good != null)
+				return good;
+			var enemies = s.OppBoard.Where(Targetable).ToList();
+			var friends = s.MyBoard.Where(m => m.Kind == Kind.Minion && m.Id != card.Id).ToList();
+			switch(kind)
+			{
+				case TargetKind.EnemyAny:
+				case TargetKind.Unknown:
+					return s.OppHero != null && !s.OppHero.Immune ? s.OppHero : enemies.OrderBy(e => e.Value).FirstOrDefault();
+				case TargetKind.EnemyMinion:
+					return enemies.OrderBy(e => e.Value).FirstOrDefault() ?? friends.OrderBy(m => m.Value).FirstOrDefault();
+				case TargetKind.FriendlyMinion:
+					return friends.OrderByDescending(m => m.Value).FirstOrDefault();
+				case TargetKind.FriendlyAny:
+					return s.MyHero;
+				default:
+					return s.OppHero;
 			}
 		}
 
