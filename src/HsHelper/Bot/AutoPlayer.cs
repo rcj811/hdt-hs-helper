@@ -262,6 +262,7 @@ namespace HsHelper.Bot
 			if(_skipTurn != s.Turn)
 			{
 				_skip.Clear();
+				_playFails.Clear();
 				_skipTurn = s.Turn;
 				Input.Pause(800, 1200); // 回合開始動畫
 				return;
@@ -281,6 +282,26 @@ namespace HsHelper.Bot
 				ChooseOffered(s);
 				return;
 			}
+
+			if(NothingToDo(s))
+			{
+				if(!_idleSeen)
+				{
+					_idleSeen = true; // 再確認一次，避免剛好讀到舊資料
+					Thread.Sleep(200);
+					return;
+				}
+				_idleSeen = false;
+				Status = "沒有可出的牌和水晶，結束回合";
+				Log.Info("Action: 結束回合（沒事可做）");
+				Input.Pause(100, 250);
+				Input.Click(s.EndTurn);
+				_endTurnAttempts++;
+				WaitUntil(x => !x.MyTurn, 5000);
+				Input.Hover(s.Neutral);
+				return;
+			}
+			_idleSeen = false;
 
 			if(!Settled(s))
 			{
@@ -591,8 +612,11 @@ namespace HsHelper.Bot
 		{
 			var c = a.Source;
 			// 先把滑鼠指到那張牌，讀遊戲記憶體確認放大的是它，才按下拖曳（避免拖到旁邊的牌）
+			Input_Neutral = s.Neutral;
 			if(!PickFromHand(s, c))
 			{
+				if(RetryLater(c))
+					return;
 				_skip.Add(c.Id);
 				Log.Info($"Hand pick failed: {c.Name}");
 				MechanicMonitor.PlayFailure(c.Id, c.Name, "手牌中指不到這張牌（已逐格確認，遊戲記憶體中找不到相同卡牌）");
@@ -637,10 +661,12 @@ namespace HsHelper.Bot
 
 			Input.RightClick(); // 取消
 			Input.Pause(300, 500);
+			if(RetryLater(c))
+				return;
 			_skip.Add(c.Id);
-			Log.Info($"Play failed, skip {c.Name} this turn");
+			Log.Info($"Play failed {MaxPlayTries} times, skip {c.Name} this turn");
 			MechanicMonitor.PlayFailure(c.Id, c.Name,
-				$"出牌失敗：拖曳{(c.Kind == Kind.Minion ? "到板面" : a.Target != null ? $"到目標「{a.Target.Name}」" : "到場中")}後仍在手上" +
+				$"出牌失敗（重試 {MaxPlayTries} 次）：拖曳{(c.Kind == Kind.Minion ? "到板面" : a.Target != null ? $"到目標「{a.Target.Name}」" : "到場中")}後仍在手上" +
 				$"（AI 判斷：類型 {c.Kind}、目標 {c.Target}、費用 {c.Cost}、當時法力 {s.Mana}）");
 		}
 
@@ -735,6 +761,47 @@ namespace HsHelper.Bot
 		}
 
 		private string _lastSig = "";
+		private readonly Dictionary<int, int> _playFails = new Dictionary<int, int>();
+		private const int MaxPlayTries = 3;
+		private bool _idleSeen;
+
+		/// <summary>出牌被退回：還沒試滿 3 次就等一下重新出（回傳 true）；試滿才略過這張牌。</summary>
+		private bool RetryLater(Ent c)
+		{
+			_playFails.TryGetValue(c.Id, out var n);
+			_playFails[c.Id] = ++n;
+			if(n >= MaxPlayTries)
+				return false;
+			Status = $"{c.Name} 被退回，稍等重新出牌（第 {n + 1} 次）";
+			Log.Info($"Play bounced: {c.Name}, retry {n + 1}/{MaxPlayTries}");
+			Input.Hover(Input_Neutral);
+			Input.Pause(900, 1400); // 等手牌歸位、畫面穩定
+			return true;
+		}
+		private System.Windows.Point Input_Neutral;
+
+		/// <summary>確認已經沒事可做：沒水晶、沒 0 費可出的牌、英雄技能不能用、沒手下能攻擊。</summary>
+		private bool NothingToDo(Snapshot s)
+		{
+			if(s.Offered.Count > 0)
+				return false;
+			var playable = s.Hand.Any(c => c.Cost <= s.Mana && !_skip.Contains(c.Id)
+				&& (c.Kind == Kind.Minion ? s.MyBoard.Count(m => m.Kind == Kind.Minion) < 7 : c.Kind != Kind.Location && c.Kind != Kind.Other)
+				&& (c.Kind != Kind.Spell || c.Target == TargetKind.None || c.IsCoin
+				    || (c.Target == TargetKind.EnemyMinion ? s.OppBoard.Any(m => m.Kind == Kind.Minion && !m.Stealth)
+					    : c.Target == TargetKind.FriendlyMinion ? s.MyBoard.Any(m => m.Kind == Kind.Minion)
+					    : c.Target != TargetKind.Unknown)));
+			if(playable)
+				return false;
+			var hp = s.MyHeroPower;
+			if(hp != null && !hp.Exhausted && hp.Cost <= s.Mana && !_skip.Contains(hp.Id))
+				return false;
+			bool CanAttack(Ent a) => a != null && !_skip.Contains(a.Id) && a.Atk > 0 && !a.Frozen && !a.CantAttack && !a.Dormant
+			                         && a.AttacksThisTurn < a.MaxAttacks && (!a.Exhausted || a.Charge || (a.Rush && a.TurnsInPlay == 0 && s.OppBoard.Count > 0));
+			if(s.MyBoard.Any(m => m.Kind == Kind.Minion && CanAttack(m)) || CanAttack(s.MyHero))
+				return false;
+			return true;
+		}
 		private int _offsetMine, _offsetTheirs, _offsetMisses;
 		private DateTime _unsettledSince = DateTime.MinValue;
 
