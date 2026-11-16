@@ -13,6 +13,7 @@ namespace HsHelper.Bot
 		public Ent Source;
 		public Ent Target;        // 可為 null
 		public string Describe;
+		public bool Trial;        // 試用看不懂的牌（學習效果）：失敗不重試、不回報
 		public override string ToString() => Describe;
 	}
 

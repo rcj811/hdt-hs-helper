@@ -40,6 +40,10 @@ namespace HsHelper.Bot
 		public int Discard;           // 出牌時棄掉幾張手牌（末日守衛 2、靈魂之火 1、「棄掉你的手牌」10）
 		public int ManaGain;          // 「獲得 N 個法力水晶（僅限本回合）」之類的加水晶法術（啟動、偽造的幸運幣）
 		public bool ManaRefresh;      // 「重置 N 個法力水晶」：只能補回已用掉的
+		public double Learned = double.NaN; // 實戰觀察到的效果價值（沒觀察過為 NaN）
+		public bool LearnedTarget;    // 目標類型是實戰學到的（敘述看不懂）
+		public int LAtk, LHp;         // 學到的：對目標造成的攻擊／血量變化
+		public bool LKill;            // 學到的：會消滅目標
 		public Point Screen;          // 螢幕座標（實體像素）
 
 		public int MaxAttacks => MegaWindfury ? 4 : Windfury ? 2 : 1;

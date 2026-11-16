@@ -38,6 +38,54 @@ namespace HsHelper.Bot
 	{
 		[DataMember(Order = 1)] public int Version = 1;
 		[DataMember(Order = 2)] public List<GameRecord> Games = new List<GameRecord>();
+		[DataMember(Order = 3)] public List<CardLesson> Lessons = new List<CardLesson>(); // 實戰觀察學到的卡牌效果
+
+		private Dictionary<string, CardLesson> _lessonMap;
+		public Dictionary<string, CardLesson> LessonMap
+		{
+			get
+			{
+				if(_lessonMap == null)
+				{
+					_lessonMap = new Dictionary<string, CardLesson>();
+					foreach(var l in Lessons.Where(x => x != null && !string.IsNullOrEmpty(x.CardId)))
+						_lessonMap[l.CardId] = l;
+				}
+				return _lessonMap;
+			}
+		}
+
+		public CardLesson Lesson(string cardId, string name)
+		{
+			if(!LessonMap.TryGetValue(cardId, out var l))
+			{
+				l = new CardLesson { CardId = cardId, Name = name ?? "" };
+				Lessons.Add(l);
+				LessonMap[cardId] = l;
+			}
+			return l;
+		}
+
+		/// <summary>合併卡牌課程：沒有的加入；兩邊都有時保留觀察次數較多的。</summary>
+		public int MergeLessons(IEnumerable<CardLesson> lessons)
+		{
+			var n = 0;
+			foreach(var l in lessons ?? Enumerable.Empty<CardLesson>())
+			{
+				if(l == null || string.IsNullOrEmpty(l.CardId))
+					continue;
+				if(LessonMap.TryGetValue(l.CardId, out var mine))
+				{
+					if(l.Tries <= mine.Tries)
+						continue;
+					Lessons.Remove(mine);
+				}
+				Lessons.Add(l);
+				LessonMap[l.CardId] = l;
+				n++;
+			}
+			return n;
+		}
 
 		private HashSet<string> _ids;
 		private HashSet<string> Ids => _ids ??= new HashSet<string>(Games.Select(g => g.Id));
@@ -76,7 +124,9 @@ namespace HsHelper.Bot
 			using var ms = new MemoryStream(Encoding.UTF8.GetBytes(json));
 			var db = (LearningDb)Ser.ReadObject(ms);
 			db.Games ??= new List<GameRecord>();
+			db.Lessons ??= new List<CardLesson>();
 			db._ids = null;
+			db._lessonMap = null;
 			return db;
 		}
 
@@ -103,7 +153,14 @@ namespace HsHelper.Bot
 			File.Move(tmp, path);
 		}
 
-		public (int added, int skipped) ImportFile(string path) => Merge(FromJson(File.ReadAllText(path, Encoding.UTF8)).Games);
+		public int LastLessonsMerged { get; private set; }
+
+		public (int added, int skipped) ImportFile(string path)
+		{
+			var other = FromJson(File.ReadAllText(path, Encoding.UTF8));
+			LastLessonsMerged = MergeLessons(other.Lessons);
+			return Merge(other.Games);
+		}
 	}
 
 	/// <summary>對手資料：從相似對局彙整出來的打法傾向與各打法勝率。</summary>

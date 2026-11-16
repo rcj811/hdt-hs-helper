@@ -55,6 +55,8 @@ namespace HsHelper.Tests
 			ReportTests();
 			Section("F. 動作成功判斷（v0.7.0 實測報告：13 張牌被誤判打不出來）");
 			VerifyTests();
+			Section("G. 實戰觀察學習看不懂的牌（v0.9.4）");
+			LessonTests();
 
 			var summary = $"結果：{_pass} 通過，{_fail} 失敗";
 			Console.WriteLine();
@@ -81,6 +83,92 @@ namespace HsHelper.Tests
 			var line = $"{(ok ? "✅" : "❌")} {name}{(string.IsNullOrEmpty(detail) ? "" : "：" + detail)}";
 			Console.WriteLine(line);
 			Report.Add("- " + line);
+		}
+
+		private static Ent With(Ent m, int atk, int hp) { var x = (Ent)typeof(Ent).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(m, null); x.Atk = atk; x.Hp = hp; return x; }
+
+		private static void LessonTests()
+		{
+			var w = new Weights();
+			// 1. 對敵方手下用，目標扣 2 血 → 學會「對敵方手下用」
+			{
+				var card = Spell(2, "Choose a minion. Its owner weeps.", "怪牌A");
+				Check("前提：敘述看不懂", card.Target == TargetKind.Unknown);
+				var foe = Minion(3, 3, "敵3/3");
+				var before = Board(2, new Ent[0], new[] { foe }, new[] { card });
+				var after = Board(0, new Ent[0], new[] { With(foe, 3, 1) }, new Ent[0]);
+				after.MyHero.Id = before.MyHero.Id; after.OppHero.Id = before.OppHero.Id;
+				var e = Lessons.Observe(before, after, card, foe);
+				var l = new CardLesson { CardId = card.CardId, Name = card.Name };
+				var learned = Lessons.Learn(l, e, w);
+				Check("觀察：目標扣 2 血 → 學會對敵方手下用", learned && l.Target == (int)TargetKind.EnemyMinion && Math.Round(l.TgtHp) == -2, l.Summary);
+			}
+			// 2. 對敵方用結果敵人變強 → 改學成「對友方手下用」
+			{
+				var card = Spell(1, "Choose a minion. Something happens.", "怪牌B");
+				var foe = Minion(2, 2);
+				var before = Board(1, new Ent[0], new[] { foe }, new[] { card });
+				var after = Board(0, new Ent[0], new[] { With(foe, 4, 4) }, new Ent[0]);
+				after.MyHero.Id = before.MyHero.Id; after.OppHero.Id = before.OppHero.Id;
+				var l = new CardLesson { CardId = card.CardId };
+				Lessons.Learn(l, Lessons.Observe(before, after, card, foe), w);
+				Check("觀察：敵人被加攻血 → 學會這是增益牌（對友方用）", l.Target == (int)TargetKind.FriendlyMinion, l.Summary);
+			}
+			// 3. 消滅目標 → 學會後 AI 會拿它解掉最大的威脅
+			{
+				var card = Spell(3, "Choose a minion. It goes away eventually.", "怪牌C");
+				var big = Minion(7, 7, "敵7/7"); var small = Minion(1, 1, "敵1/1");
+				var before = Board(3, new Ent[0], new[] { big, small }, new[] { card });
+				var after = Board(0, new Ent[0], new[] { small }, new Ent[0]);
+				after.MyHero.Id = before.MyHero.Id; after.OppHero.Id = before.OppHero.Id;
+				var l = new CardLesson { CardId = card.CardId, Name = card.Name };
+				Lessons.Learn(l, Lessons.Observe(before, after, card, big), w);
+				Check("觀察：目標消失 → 學會會消滅目標", l.KillRate >= 0.99 && l.Target == (int)TargetKind.EnemyMinion, l.Summary);
+
+				var card2 = Spell(3, "Choose a minion. It goes away eventually.", "怪牌C");
+				var big2 = Minion(7, 7, "敵7/7"); var small2 = Minion(1, 1, "敵1/1");
+				var s0 = Board(3, new Ent[0], new[] { big2, small2 }, new[] { card2 });
+				Decide(s0, out var p0);
+				Check("沒學過：看不懂的牌不會亂出", !p0.Contains("怪牌C"), string.IsNullOrEmpty(p0) ? "（結束回合）" : p0);
+				Lessons.Apply(s0, new Dictionary<string, CardLesson> { [card2.CardId] = l });
+				var act = Decide(s0, out var p1);
+				Check("學會之後：拿它消滅 7/7", act?.Source?.Id == card2.Id && act.Target?.Id == big2.Id, p1);
+			}
+			// 4. 不用目標、效果看不懂的牌：觀察到很強就優先出
+			{
+				var odd = Spell(2, "Something mysterious happens.", "神秘法術");
+				var bear = Card(2, 2, 2, "2費2/2");
+				var s0 = Board(2, new Ent[0], new Ent[0], new[] { odd, bear });
+				Decide(s0, out var p0);
+				odd.Learned = 40;
+				Decide(s0, out var p1);
+				Check("觀察到效果很強（價值 40）→ 改出這張", p1.Contains("神秘法術") && !p1.Contains("2費2/2"), $"學前：{p0}｜學後：{p1}");
+			}
+			// 5. 試用規則
+			{
+				var card = Spell(1, "Choose a minion. Unclear.", "怪牌D");
+				var map = new Dictionary<string, CardLesson>();
+				Check("沒試過的看不懂牌值得試", Lessons.WorthTrying(card, map));
+				map[card.CardId] = new CardLesson { CardId = card.CardId, Tries = 2, NoEffect = 1 };
+				Check("試滿 3 次就不再試", !Lessons.WorthTrying(card, map));
+				var foe = Minion(5, 5); var mine = Minion(2, 2);
+				var s0 = Board(1, new[] { mine }, new[] { foe }, new[] { card });
+				Check("試用先選敵方最有價值的手下", Lessons.TrialTarget(s0, null)?.Id == foe.Id);
+				Check("敵方試了沒效果 → 改試我方手下", Lessons.TrialTarget(s0, new CardLesson { EnemyTries = 1, NoEffect = 1 })?.Id == mine.Id);
+			}
+			// 6. 存檔／匯入：卡牌效果一起匯出，觀察次數多的優先
+			{
+				var db = new LearningDb();
+				db.Lesson("X1", "甲").Tries = 2;
+				var other = new LearningDb();
+				other.Lesson("X1", "甲").Tries = 5;
+				other.Lesson("X2", "乙").Tries = 1;
+				var round = LearningDb.FromJson(other.ToJson());
+				var n = db.MergeLessons(round.Lessons);
+				Check("匯入卡牌效果：新增 1 張、觀察較多的覆蓋 1 張", n == 2 && db.LessonMap["X1"].Tries == 5 && db.LessonMap.ContainsKey("X2"));
+				var n2 = db.MergeLessons(LearningDb.FromJson(db.ToJson()).Lessons);
+				Check("重複匯入不會重複加", n2 == 0 && db.Lessons.Count == 2);
+			}
 		}
 
 		// ───────── 建立測試用局面 ─────────

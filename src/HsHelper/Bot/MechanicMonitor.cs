@@ -497,6 +497,16 @@ namespace HsHelper.Bot
 						File.Copy(f, Path.Combine(shots, Path.GetFileName(f)));
 				}
 				File.WriteAllText(Path.Combine(tmp, "hdt-log-excerpt.txt"), HdtLogExcerpt(), Encoding.UTF8);
+				try
+				{
+					// 實戰觀察學到的卡牌效果（給 Claude 檢查 AI 學得對不對）
+					var db = LearningDb.Load(AutoPlayer.DbPath);
+					var sb = new StringBuilder("# 實戰學到的卡牌效果\n\n| 卡牌 | CardId | 學到的效果 | 觀察 | 試用無效 |\n|---|---|---|---|---|\n");
+					foreach(var l in db.Lessons.OrderByDescending(x => x.Tries))
+						sb.Append($"| {l.Name} | {l.CardId} | {l.Summary} | {l.Tries} | {l.NoEffect} |\n");
+					File.WriteAllText(Path.Combine(tmp, "card-lessons.md"), sb.ToString(), Encoding.UTF8);
+				}
+				catch(Exception) { /* 讀不到就算了 */ }
 				if(File.Exists(zipPath))
 					File.Delete(zipPath);
 				System.IO.Compression.ZipFile.CreateFromDirectory(tmp, zipPath);

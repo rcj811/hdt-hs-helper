@@ -318,7 +318,8 @@ namespace HsHelper.Bot
 					if(c.Charge) m.AttacksLeft = c.MaxAttacks;
 					else if(c.Rush) { m.AttacksLeft = c.MaxAttacks; m.MinionsOnly = true; }
 					n.My.Add(m);
-					n.Bonus += c.Cost * 1.5 + (c.Target != TargetKind.None ? c.Damage * 2 + 2 : 0); // 戰吼等額外效果的粗估
+					var bc = c.Cost * 1.5 + (c.Target != TargetKind.None ? c.Damage * 2 + 2 : 0); // 戰吼等額外效果的粗估
+					n.Bonus += double.IsNaN(c.Learned) ? bc : Math.Max(bc, c.Learned); // 實戰觀察過的戰吼效果
 					yield return n;
 					yield break;
 				}
@@ -372,7 +373,9 @@ namespace HsHelper.Bot
 					var d = Draw.Match(text);
 					var draws = d.Success ? (d.Groups[1].Value == "a" ? 1 : int.Parse(d.Groups[1].Value)) : 0;
 					// 看不懂效果的法術：價值至少比「留在手上」高一點（v0.9.1：0 費法術原本只值 4 分 < 手牌 5.6 分，一直不出）
-					n.Bonus += Math.Max(4 + c.Cost * 3 + draws * 3, W.HandCard + 1 + c.Cost * 3);
+					var guess = Math.Max(4 + c.Cost * 3 + draws * 3, W.HandCard + 1 + c.Cost * 3);
+					// v0.9.4：實戰觀察過的牌，用觀察到的價值（只往上調：延遲效果的牌當下看不出效果，不能因此變成廢牌）
+					n.Bonus += double.IsNaN(c.Learned) ? guess : Math.Max(guess, c.Learned);
 					var ar = Armor.Match(text);
 					if(ar.Success) n.Me.Armor += int.Parse(ar.Groups[1].Value);
 					if(c.Damage > 0 && text.IndexOf("enemy hero", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -417,6 +420,20 @@ namespace HsHelper.Bot
 			var lower = text.ToLowerInvariant();
 			var om = n.Op.FirstOrDefault(m => m.Id == tid);
 			var mm = n.My.FirstOrDefault(m => m.Id == tid);
+			if(c.LearnedTarget)
+			{
+				// 敘述看不懂、但實戰觀察過：照觀察到的效果套用在目標上
+				var t = om ?? mm;
+				if(t != null)
+				{
+					if(c.LKill) t.Hp = 0;
+					else { t.Atk = Math.Max(0, t.Atk + c.LAtk); t.Hp += c.LHp; }
+				}
+				else if(tid == n.Opp.Id && c.LHp < 0) DamageHero(n.Opp, -c.LHp);
+				n.Bonus += c.Cost * 0.5;
+				RemoveDead(n);
+				return;
+			}
 			if(c.Damage > 0)
 			{
 				if(om != null) Hit(om, c.Damage);

@@ -297,6 +297,8 @@ namespace HsHelper.Bot
 					return;
 				}
 				_idleSeen = false;
+				if(TryUnknown(s))
+					return;
 				Status = "沒有可出的牌和水晶，結束回合";
 				Log.Info("Action: 結束回合（沒事可做）");
 				Input.Pause(100, 250);
@@ -317,6 +319,8 @@ namespace HsHelper.Bot
 			_unsettledSince = DateTime.MinValue;
 
 			ApplyLearning(s);
+			lock(DbLock)
+				Lessons.Apply(s, Db.LessonMap);
 			BotAction action;
 			try
 			{
@@ -330,9 +334,90 @@ namespace HsHelper.Bot
 				Log.Error(ex);
 				action = Planner.Next(s, _skip); // 搜尋出錯時退回單步規則
 			}
+			if(action.Type == ActionType.EndTurn && TryUnknown(s))
+				return;
 			Status = action.Describe;
 			Log.Info("Action: " + action.Describe);
 			Execute(s, action);
+		}
+
+		// ───────── 實戰學習看不懂的牌（v0.9.4） ─────────
+		/// <summary>回合要結束、還有剩水晶時，試出一張「目標看不懂」的牌，觀察效果記下來（每張最多試 3 次）。</summary>
+		private bool TryUnknown(Snapshot s)
+		{
+			Dictionary<string, CardLesson> map;
+			lock(DbLock)
+				map = Db.LessonMap;
+			Lessons.Apply(s, map);
+			var c = s.Hand.FirstOrDefault(h => h.Kind == Kind.Spell && h.Cost <= s.Mana && !_skip.Contains(h.Id) && Lessons.WorthTrying(h, map));
+			var hp = s.MyHeroPower;
+			if(c == null && hp != null && !hp.Exhausted && hp.Cost <= s.Mana && !_skip.Contains(hp.Id) && Lessons.WorthTrying(hp, map))
+				c = hp;
+			if(c == null)
+				return false;
+			map.TryGetValue(c.CardId, out var l);
+			var t = Lessons.TrialTarget(s, l);
+			if(t == null)
+				return false;
+			_skip.Add(c.Id); // 每回合每張只試一次
+			var a = new BotAction
+			{
+				Type = c == hp ? ActionType.HeroPower : ActionType.Play, Source = c, Target = t, Trial = true,
+				Describe = $"試用看不懂的{(c == hp ? "英雄技能" : "牌")}「{c.Name}」→ {t.Name}（觀察效果、記下來）"
+			};
+			Status = a.Describe;
+			Log.Info("Action: " + a.Describe);
+			Execute(s, a);
+			return true;
+		}
+
+		/// <summary>出牌／技能結算後，比對前後局面記下實際效果。</summary>
+		private void ObserveEffect(Snapshot before, Ent c, Ent target)
+		{
+			try
+			{
+				if(c == null || string.IsNullOrEmpty(c.CardId) || c.IsCoin || c.ManaGain > 0)
+					return;
+				var observe = c.Kind == Kind.Spell || c.Kind == Kind.HeroPower || c == before.MyHeroPower
+				              || (c.Kind == Kind.Minion && (c.Text ?? "").IndexOf("battlecry", StringComparison.OrdinalIgnoreCase) >= 0);
+				if(!observe)
+					return;
+				Thread.Sleep(900); // 等效果動畫與 HDT 記錄
+				var after = Read();
+				if(!after.InGame || after.GameOver)
+					return;
+				var e = Lessons.Observe(before, after, c, target);
+				bool learned;
+				string summary;
+				lock(DbLock)
+				{
+					var l = Db.Lesson(c.CardId, c.Name);
+					learned = Lessons.Learn(l, e, Search.W);
+					summary = l.Summary;
+					Db.Save(DbPath);
+				}
+				Log.Info($"Lesson: {c.Name} → {summary}");
+				if(learned)
+					MechanicMonitor.Report($"實戰學會新卡：「{c.Name}」{summary}");
+			}
+			catch(Exception ex)
+			{
+				Log.Error(ex);
+			}
+		}
+
+		private void TrialFailed(Ent c, Ent target, Snapshot s)
+		{
+			lock(DbLock)
+			{
+				var l = Db.Lesson(c.CardId, c.Name);
+				var enemy = s.OppBoard.Any(m => m.Id == target?.Id);
+				if(enemy) l.EnemyTries++; else l.FriendlyTries++;
+				l.NoEffect++;
+				l.Summary = $"試用 {l.EnemyTries + l.FriendlyTries} 次都無法施放在{(enemy ? "敵方" : "我方")}目標上";
+				Db.Save(DbPath);
+			}
+			Log.Info($"Trial failed: {c.Name} on {target?.Name}");
 		}
 
 		// ───────── 對戰結束／選單：自動下一場 ─────────
@@ -613,6 +698,7 @@ namespace HsHelper.Bot
 			if(WaitUntil(Done, battlecry ? 2500 : 5000))
 			{
 				Input.Pause(700, 1100);
+				ObserveEffect(before, c, c.Kind == Kind.Spell ? a.Target : null);
 				return;
 			}
 
@@ -627,7 +713,11 @@ namespace HsHelper.Bot
 				{
 					Input.Click(target.Screen);
 					if(WaitUntil(Done, 4000))
+					{
+						Input.Pause(500, 800);
+						ObserveEffect(now, c, target);
 						return;
+					}
 				}
 				else if(WaitUntil(Done, 2500))
 					return;
@@ -640,6 +730,11 @@ namespace HsHelper.Bot
 
 			Input.RightClick(); // 取消
 			Input.Pause(300, 500);
+			if(a.Trial)
+			{
+				TrialFailed(c, a.Target, s);
+				return;
+			}
 			if(RetryLater(c))
 				return;
 			_skip.Add(c.Id);
@@ -658,7 +753,14 @@ namespace HsHelper.Bot
 				Input.Click(hp.Screen);
 			var before = s;
 			var ok = WaitUntil(x => Verify.HeroPowerResolved(before, x), 4000);
-			if(!ok)
+			if(ok)
+				ObserveEffect(before, hp, a.Target);
+			else if(a.Trial)
+			{
+				Input.RightClick();
+				TrialFailed(hp, a.Target, s);
+			}
+			else
 			{
 				Input.RightClick();
 				_skip.Add(hp.Id);

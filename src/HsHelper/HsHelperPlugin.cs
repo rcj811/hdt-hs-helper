@@ -225,13 +225,15 @@ namespace HsHelper
 				if(dlg.ShowDialog() != true)
 					return;
 				int added = 0, skipped = 0;
+				var lessons = 0;
 				foreach(var f in dlg.FileNames)
 				{
 					var (a, sk) = _auto.Import(f);
 					added += a;
 					skipped += sk;
+					lessons += _auto.Db.LastLessonsMerged;
 				}
-				_toast?.Show($"匯入完成：新增 {added} 筆，略過重複 {skipped} 筆", Color.FromRgb(0x6B, 0xC5, 0xF8));
+				_toast?.Show($"匯入完成：新增 {added} 筆，略過重複 {skipped} 筆" + (lessons > 0 ? $"，卡牌效果 {lessons} 張" : ""), Color.FromRgb(0x6B, 0xC5, 0xF8));
 			}
 			catch(Exception ex)
 			{
