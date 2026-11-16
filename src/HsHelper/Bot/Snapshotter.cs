@@ -51,6 +51,7 @@ namespace HsHelper.Bot
 			catch(Exception) { /* 讀不到就算了 */ }
 			s.Mana = me.GetTag(GameTag.RESOURCES) + me.GetTag(GameTag.TEMP_RESOURCES)
 			         - me.GetTag(GameTag.RESOURCES_USED) - me.GetTag(GameTag.OVERLOAD_LOCKED);
+			s.ManaSpent = me.GetTag(GameTag.RESOURCES_USED);
 
 			double W = ow.Width, H = ow.Height;
 			if(double.IsNaN(W) || double.IsNaN(H) || W < 100 || H < 100)

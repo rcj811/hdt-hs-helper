@@ -64,7 +64,7 @@ namespace HsHelper.Bot
 			public H Me, Opp;
 			public List<M> My = new List<M>(), Op = new List<M>();
 			public List<Ent> Hand = new List<Ent>();
-			public int Mana, ManaGained;
+			public int Mana, ManaGained, ManaSpent;
 			public bool HeroPowerUsable;
 			public Ent HeroPower;
 			public double Bonus;            // 看不懂效果的牌：用費用估值
@@ -167,6 +167,7 @@ namespace HsHelper.Bot
 				},
 				Opp = new H { Id = s.OppHero.Id, Hp = s.OppHero.Hp, Armor = s.OppHero.Armor, Immune = s.OppHero.Immune },
 				Mana = s.Mana,
+				ManaSpent = s.ManaSpent,
 				HeroPower = s.MyHeroPower,
 				HeroPowerUsable = s.MyHeroPower != null && !s.MyHeroPower.Exhausted && !skip.Contains(s.MyHeroPower.Id)
 			};
@@ -260,6 +261,7 @@ namespace HsHelper.Bot
 				var n = st.Clone();
 				n.Hand.Remove(c);
 				n.Mana -= c.Cost;
+				n.ManaSpent += c.Cost;
 				n.Moves.Add(new Move { Type = ActionType.Play, Source = c.Id, Target = target });
 				return n;
 			}
@@ -270,6 +272,21 @@ namespace HsHelper.Bot
 				n.Mana += 1;
 				n.ManaGained++;
 				n.Bonus -= 4; // 不必要時別亂用幸運幣（SilverFish 也會懲罰）
+				yield return n;
+				yield break;
+			}
+
+			// 加水晶法術（啟動、偽造的幸運幣、凜冬號角…）：跟幸運幣一樣當作「多 N 點水晶」，
+			// 只有能換到更多出牌時才值得用（沒用完的水晶會在評分扣分）
+			if(c.Kind == Kind.Spell && c.ManaGain > 0)
+			{
+				var n = Base();
+				var gain = c.ManaRefresh ? Math.Min(c.ManaGain, n.ManaSpent) : c.ManaGain;
+				if(gain <= 0)
+					yield break;
+				n.Mana += gain;
+				n.ManaGained += gain;
+				n.Bonus -= 1; // 少一張手牌已經在評分扣過，這裡只輕微懲罰
 				yield return n;
 				yield break;
 			}
@@ -421,6 +438,7 @@ namespace HsHelper.Bot
 			{
 				var n = st.Clone();
 				n.Mana -= hp.Cost;
+				n.ManaSpent += hp.Cost;
 				n.HeroPowerUsable = false;
 				n.Moves.Add(new Move { Type = ActionType.HeroPower, Source = hp.Id, Target = target });
 				return n;

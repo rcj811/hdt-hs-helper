@@ -37,6 +37,8 @@ namespace HsHelper.Bot
 		public TargetKind Target;
 		public int Damage;            // 傷害類法術的傷害值（看不出來為 0）
 		public bool AoE;              // 會打到全場
+		public int ManaGain;          // 「獲得 N 個法力水晶（僅限本回合）」之類的加水晶法術（啟動、偽造的幸運幣）
+		public bool ManaRefresh;      // 「重置 N 個法力水晶」：只能補回已用掉的
 		public Point Screen;          // 螢幕座標（實體像素）
 
 		public int MaxAttacks => MegaWindfury ? 4 : Windfury ? 2 : 1;
@@ -57,6 +59,7 @@ namespace HsHelper.Bot
 		public bool MainAction;
 		public int Turn;
 		public int Mana;
+		public int ManaSpent;         // 本回合已用掉的水晶（重置水晶類的上限）
 		public string MyClass;
 
 		public List<Ent> Hand = new List<Ent>();

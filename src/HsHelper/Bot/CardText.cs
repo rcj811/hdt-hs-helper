@@ -19,7 +19,7 @@ namespace HsHelper.Bot
 			@"^(whenever|after|at the (end|start)|when |for the rest|secret|spellburst|inspire|overkill|frenzy|deathrattle|while|each turn|if you|your next|has \+|can't|costs?)", O);
 		// 目標名詞前面的字：這些才是「出牌時選目標」（對…、給予、消滅、沉默、冰凍、變形、返回、選擇、設定…）
 		private static readonly Regex TargetVerb = new Regex(
-			@"\b(to|give|destroy|silence|freeze|transform|return|choose|set|steal|swap|heal|copy of|control of|on)\s+$", O);
+			@"\b(to|give|destroy|silence|freeze|transform|return|choose|set|steal|swap|heal|restore|change|adapt|copy of|control of|on|(attack|health) of)\s+$", O);
 
 		/// <summary>句子裡有「一個 X」，而且前面是選目標的動詞（排除「抽一張手下」「使用一個手下後」「揭示一個手下」等）。</summary>
 		private static bool IsTargetPhrase(string clause)
@@ -42,11 +42,21 @@ namespace HsHelper.Bot
 		private static readonly Regex Targeted = new Regex(
 			@"\b(a|an|another) (damaged |undamaged |friendly |enemy |other |frozen )*(minion|character|enemy|beast|demon|dragon|mech|murloc|pirate|elemental|undead|naga|totem)\b", O);
 
+		// 加水晶：Innervate / Counterfeit Coin「Gain 1 Mana Crystal this turn only」、Horn of Winter「Refresh 2 Mana Crystals」
+		private static readonly Regex ManaGainRe = new Regex(@"\b(gain|refresh) (\d+|a|an) mana crystals?( this turn only)?", O);
+
 		public static void Classify(Ent e, bool isHeroPower = false)
 		{
-			var t = e.Text = Clean.Replace(e.Text ?? "", "").Replace("_", " ");
+			var t = e.Text = Regex.Replace(Clean.Replace((e.Text ?? "").Replace("[x]", " "), "").Replace("_", " "), @"\s+", " ").Trim();
 			var dm = DealDamage.Match(t);
 			e.Damage = dm.Success ? int.Parse(dm.Groups[1].Value) : 0;
+			var mg = ManaGainRe.Match(t);
+			if(mg.Success && e.Kind == Kind.Spell)
+			{
+				var v = mg.Groups[2].Value.ToLowerInvariant();
+				e.ManaGain = v == "a" || v == "an" ? 1 : int.Parse(v);
+				e.ManaRefresh = mg.Groups[1].Value.ToLowerInvariant() == "refresh";
+			}
 			e.AoE = AllMinions.IsMatch(t) && (dm.Success || t.IndexOf("destroy", System.StringComparison.OrdinalIgnoreCase) >= 0);
 
 			// 手下只有「戰吼」那段會在出牌時選目標；沒有戰吼的手下不需要目標
@@ -71,7 +81,8 @@ namespace HsHelper.Bot
 			                        && c.IndexOf("your hero", System.StringComparison.OrdinalIgnoreCase) < 0
 			                        && c.IndexOf("all ", System.StringComparison.OrdinalIgnoreCase) < 0;
 
-			var clause = clauses.FirstOrDefault(c => IsTargetPhrase(c) && !Random.IsMatch(c) && !AllMinions.IsMatch(c));
+			// 「a random minion」本身不會被當成目標名詞，所以句子後半有 random（變成隨機一個…）不影響
+			var clause = clauses.FirstOrDefault(c => IsTargetPhrase(c) && !AllMinions.IsMatch(c));
 			// 沒寫目標名詞的「造成 X 點傷害」（火球術、法師英雄技能、精靈弓箭手）
 			clause ??= clauses.FirstOrDefault(c => DealDamage.IsMatch(c) && Plain(c));
 			// 沒寫目標名詞的「恢復 X 點生命」（巫毒巫醫、牧師英雄技能）
@@ -93,7 +104,7 @@ namespace HsHelper.Bot
 				e.Target = Has("minion") ? TargetKind.EnemyMinion : TargetKind.EnemyAny; // 含傷害值不固定的「造成等同於…的傷害」
 			else if(Has("freeze") && !Has("minion"))
 				e.Target = TargetKind.EnemyAny; // 「冰凍一個敵人」可以選英雄
-			else if(Has("destroy") || Has("transform") || Has("silence") || Has("freeze") || Has("return") || Has("enemy") || Has("set "))
+			else if(Has("destroy") || Has("transform") || Has("silence") || Has("freeze") || Has("return") || Has("enemy") || Has("set ") || Has("change") || Has("health to 1"))
 				e.Target = TargetKind.EnemyMinion;
 			else
 				e.Target = TargetKind.Unknown;

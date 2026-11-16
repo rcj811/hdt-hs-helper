@@ -26,6 +26,7 @@ namespace HsHelper.Tests
 				Tuner.Run(args.Length > 1 ? int.Parse(args[1]) : 30);
 				return 0;
 			}
+			if(args.Length > 1 && args[0] == "--zero") { ZeroScan.Run(args[1]); return 0; }
 			if(args.Length > 1 && args[0] == "--scan")
 			{
 				CardScan.Run(args[1]);
@@ -278,13 +279,38 @@ namespace HsHelper.Tests
 			}
 			// 16a. 實測：0 費法術一直沒出
 			{
-				var free = Spell(0, "Gain 1 Mana Crystal this turn only.", "0費法術");
+				var free = Spell(0, "<b>Discover</b> a spell.", "0費法術");
 				var s = Board(0, new Ent[0], new Ent[0], new[] { free });
 				var act = Decide(s, out var plan);
 				Check("0 費法術會打出（沒水晶時也一樣）", act?.Source?.Id == free.Id, string.IsNullOrEmpty(plan) ? "（結束回合）" : plan);
 				var wisp = Card(0, 1, 1, "0費1/1");
 				var s2 = Board(0, new Ent[0], new Ent[0], new[] { wisp });
 				Check("0 費手下會打出", Decide(s2, out var p2)?.Source?.Id == wisp.Id, p2);
+			}
+			// 16c. 實測：加水晶的 0 費法術（啟動 Innervate / 偽造的幸運幣）
+			{
+				var inn = Spell(0, "Gain 1 Mana Crystal this turn only.", "啟動");
+				Check("啟動：讀出加 1 水晶", inn.ManaGain == 1 && !inn.ManaRefresh);
+				var horn = Spell(0, "Refresh 2 Mana Crystals.", "凜冬號角");
+				Check("凜冬號角：讀出重置 2 水晶", horn.ManaGain == 2 && horn.ManaRefresh);
+				var bear = Card(1, 2, 2, "1費2/2");
+				var s = Board(0, new Ent[0], new Ent[0], new[] { inn, bear });
+				var act = Decide(s, out var plan);
+				Check("啟動：能讓手下出得去就用", act?.Source?.Id == inn.Id && plan.Contains("1費2/2"), plan);
+				var s2 = Board(0, new Ent[0], new Ent[0], new[] { inn, Card(3, 3, 3, "3費3/3") });
+				Decide(s2, out var p2);
+				Check("啟動：用了也出不了牌就留著（不浪費）", !p2.Contains("啟動"), string.IsNullOrEmpty(p2) ? "（結束回合）" : p2);
+				var s3 = Board(3, new Ent[0], new Ent[0], new[] { inn, Card(4, 4, 5, "4費4/5"), Card(3, 3, 3, "3費3/3") });
+				Decide(s3, out var p3);
+				Check("啟動：3 水晶時加 1 跳出 4 費", p3.Contains("啟動") && p3.Contains("4費4/5"), p3);
+			}
+			// 16d. 卡牌敘述有換行／[x] 時也要讀出目標（全 0 費卡掃描發現）
+			{
+				Check("換行：群起而噬 → 敵方手下", Spell(0, "[x]Choose an enemy\nminion. Your minions attack it.", "群起而噬").Target == TargetKind.EnemyMinion);
+				Check("毒蛇花 → 友方手下", Spell(0, "Give a friendly\nBeast <b>Poisonous</b>.", "毒蛇花").Target == TargetKind.FriendlyMinion);
+				Check("獵人印記 → 敵方手下", Spell(0, "Change a minion's Health to 1.", "獵人印記").Target == TargetKind.EnemyMinion);
+				Check("先祖治療 → 友方手下", Spell(0, "Restore a minion to full Health and give it <b>Taunt</b>.", "先祖治療").Target == TargetKind.FriendlyMinion);
+				Check("突變（後半有 random）→ 友方手下", Spell(0, "Transform a friendly minion into a random one that costs (1) more.", "突變").Target == TargetKind.FriendlyMinion);
 			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{

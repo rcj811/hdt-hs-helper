@@ -44,3 +44,26 @@ namespace HsHelper.Tests
 		}
 	}
 }
+namespace HsHelper.Tests
+{
+	public static class ZeroScan
+	{
+		public static void Run(string path)
+		{
+			var doc = System.Xml.Linq.XDocument.Load(path);
+			foreach(var e in doc.Root.Elements("Entity"))
+			{
+				System.Xml.Linq.XElement T(int id) => System.Linq.Enumerable.FirstOrDefault(e.Elements("Tag"), t => (string)t.Attribute("enumID") == id.ToString());
+				int V(int id) => (int?)T(id)?.Attribute("value") ?? 0;
+				if(V(321) != 1 || V(48) != 0) continue;
+				var type = V(202);
+				if(type != 4 && type != 5 && type != 7 && type != 39) continue;
+				var text = T(184)?.Element("enUS")?.Value ?? "";
+				var ent = new HsHelper.Bot.Ent { Text = text, Kind = type == 4 ? HsHelper.Bot.Kind.Minion : HsHelper.Bot.Kind.Spell };
+				HsHelper.Bot.CardText.Classify(ent);
+				string clean(string s) => System.Text.RegularExpressions.Regex.Replace(s ?? "", @"<[^>]+>|\s+|[\[\]$#]", " ").Trim();
+				System.Console.WriteLine($"{type}\t{ent.Target}\t{T(185)?.Element("zhTW")?.Value}\t{T(185)?.Element("enUS")?.Value}\t{clean(text)}\t{clean(T(184)?.Element("zhTW")?.Value)}");
+			}
+		}
+	}
+}

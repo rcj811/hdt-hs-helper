@@ -169,7 +169,7 @@ namespace HsHelper.Bot
 				case Kind.Hero:
 					return true;
 				case Kind.Spell:
-					if(c.IsCoin)
+					if(c.IsCoin || c.ManaGain > 0)
 						return true;
 					if(c.AoE && !AoEWorthIt(s, c))
 						return false;
@@ -190,8 +190,8 @@ namespace HsHelper.Bot
 
 		private static BotAction PlayCard(Snapshot s, ISet<int> skip)
 		{
-			var candidates = s.Hand.Where(c => !c.IsCoin && Playable(s, c, skip)).ToList();
-			var coin = s.Hand.FirstOrDefault(c => c.IsCoin && !skip.Contains(c.Id));
+			var candidates = s.Hand.Where(c => !c.IsCoin && c.ManaGain == 0 && Playable(s, c, skip)).ToList();
+			var coin = s.Hand.FirstOrDefault(c => (c.IsCoin || (c.ManaGain == 1 && !c.ManaRefresh)) && !skip.Contains(c.Id));
 
 			var plan = BestSet(candidates, s.Mana, 7 - s.MyBoard.Count);
 			if(coin != null)

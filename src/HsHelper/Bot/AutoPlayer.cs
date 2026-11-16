@@ -764,9 +764,13 @@ namespace HsHelper.Bot
 		{
 			if(s.Offered.Count > 0)
 				return false;
-			var playable = s.Hand.Any(c => c.Cost <= s.Mana && !_skip.Contains(c.Id)
+			// 幸運幣／加水晶法術本身不算「有事可做」；它們只有在能讓別張牌出得去時才算
+			bool IsManaCard(Ent c) => c.IsCoin || c.ManaGain > 0;
+			var extra = s.Hand.Where(c => IsManaCard(c) && c.Cost <= s.Mana && !_skip.Contains(c.Id))
+				.Sum(c => c.IsCoin ? 1 : c.ManaRefresh ? Math.Min(c.ManaGain, s.ManaSpent) : c.ManaGain);
+			var playable = s.Hand.Any(c => !IsManaCard(c) && c.Cost <= s.Mana + extra && !_skip.Contains(c.Id)
 				&& (c.Kind == Kind.Minion ? s.MyBoard.Count(m => m.Kind == Kind.Minion) < 7 : c.Kind != Kind.Location && c.Kind != Kind.Other)
-				&& (c.Kind != Kind.Spell || c.Target == TargetKind.None || c.IsCoin
+				&& (c.Kind != Kind.Spell || c.Target == TargetKind.None
 				    || (c.Target == TargetKind.EnemyMinion ? s.OppBoard.Any(m => m.Kind == Kind.Minion && !m.Stealth)
 					    : c.Target == TargetKind.FriendlyMinion ? s.MyBoard.Any(m => m.Kind == Kind.Minion)
 					    : c.Target != TargetKind.Unknown)));
