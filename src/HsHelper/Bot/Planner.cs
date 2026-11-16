@@ -172,6 +172,8 @@ namespace HsHelper.Bot
 				case Kind.Spell:
 					if(c.IsCoin || c.ManaGain > 0)
 						return true;
+					if(c.Special == "twoTargets")
+						return false; // 要選兩次目標的牌不自動用
 					if(c.AoE && !AoEWorthIt(s, c))
 						return false;
 					return c.Target == TargetKind.None || PickTarget(s, c, c.Target) != null;
@@ -275,6 +277,20 @@ namespace HsHelper.Bot
 					}
 					// 消滅／變形等：留給有價值的目標
 					return enemies.Where(e => e.Value >= 5).OrderByDescending(e => e.Value).FirstOrDefault();
+				case TargetKind.AnyMinion:
+				{
+					var all = enemies.Concat(friends.Where(m => m.Id != card.Id)).ToList();
+					if(card.Special == "swap")
+					{
+						// 交換攻血：敵方挑「攻高血低」（變弱），我方挑「血高攻低」（變強）
+						var bestE = enemies.Where(e => e.Atk > e.Hp).OrderByDescending(e => e.Atk - e.Hp).FirstOrDefault();
+						var bestF = friends.Where(m => m.Id != card.Id && m.Hp > m.Atk).OrderByDescending(m => m.Hp - m.Atk).FirstOrDefault();
+						if(bestE == null) return bestF;
+						if(bestF == null) return bestE;
+						return bestE.Atk - bestE.Hp >= bestF.Hp - bestF.Atk ? bestE : bestF;
+					}
+					return all.OrderByDescending(m => m.Value).FirstOrDefault(); // 複製類：挑場上最有價值的
+				}
 				case TargetKind.FriendlyMinion:
 					// 「消滅／犧牲一個友方手下」挑最弱的；增益挑最強的
 					var harmful = Regex.IsMatch(card.Text ?? "", @"\b(destroy|sacrifice|deal|transform|silence|return)\b", RegexOptions.IgnoreCase);
@@ -309,6 +325,8 @@ namespace HsHelper.Bot
 					return friends.OrderByDescending(m => m.Value).FirstOrDefault();
 				case TargetKind.FriendlyAny:
 					return s.MyHero;
+				case TargetKind.AnyMinion:
+					return enemies.Concat(friends).OrderByDescending(m => m.Value).FirstOrDefault() ?? s.OppHero;
 				default:
 					return s.OppHero;
 			}

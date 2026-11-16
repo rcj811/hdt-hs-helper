@@ -94,7 +94,8 @@ namespace HsHelper.Bot
 			var t = PlayScope(e);
 			if(t.Length == 0) return;
 			var m = SummonRe.Match(t);
-			if(m.Success) { e.SumN = N(m.Groups[1].Value); e.SumA = int.Parse(m.Groups[2].Value); e.SumH = int.Parse(m.Groups[3].Value); }
+			if(m.Success && t.IndexOf("for your opponent", m.Index, System.StringComparison.OrdinalIgnoreCase) < 0) // 火車王：幫對手召喚的不算
+			{ e.SumN = N(m.Groups[1].Value); e.SumA = int.Parse(m.Groups[2].Value); e.SumH = int.Parse(m.Groups[3].Value); }
 			m = DrawRe.Match(t);
 			if(m.Success) e.Draw = N(m.Groups[1].Value);
 			m = ArmorRe.Match(t);
@@ -165,6 +166,11 @@ namespace HsHelper.Bot
 				if(e.Poisonous) t.Add("劇毒");
 				if(e.Windfury) t.Add("風怒");
 			}
+			if(e.Target == TargetKind.AnyMinion)
+				t.Add(e.Special == "swap" ? "交換攻血" : e.Special.StartsWith("copy") ? "複製手下" : "選手下");
+			if(e.Special == "set11") t.Add("變 1/1");
+			if(e.Special == "aoeOthers") t.Add($"其他全場{e.Damage}傷");
+			if(e.Special == "twoTargets") t.Add("要選兩次（不自動用）");
 			if(e.Target == TargetKind.Unknown) t.Add("目標看不懂");
 			return t;
 		}
@@ -173,6 +179,45 @@ namespace HsHelper.Bot
 		{
 			ClassifyTarget(e, isHeroPower);
 			Extras(e);
+			Overrides(e);
+		}
+
+		// ───────── 手寫規則：一般規則判斷不了目標的特殊牌（v0.9.5 全卡掃描剩下的 20 種）─────────
+		private static readonly (Regex re, TargetKind target, string special)[] Rules =
+		{
+			(new Regex(@"become a copy of it", O), TargetKind.AnyMinion, "copy"),                          // 無面操縱者：複製場上最有價值的手下
+			(new Regex(@"summon a 1/1 copy of it", O), TargetKind.FriendlyMinion, ""),                    // 幻象呼喚者：複製自己最強的
+			(new Regex(@"swap (the attack and health of a minion|a minion's attack and health)", O), TargetKind.AnyMinion, "swap"), // 瘋狂的鍊金師、古怪的藥劑師、顛顛倒倒
+			(new Regex(@"swap it with a random one in its owner's hand", O), TargetKind.EnemyMinion, ""), // 暗影獵手沃金：換掉敵方大手下
+			(new Regex(@"shuffle .{0,40}(cop|'shadows').{0,25}into your deck", O), TargetKind.AnyMinion, "copyDeck"), // 倚多為勝、托戈瓦哥的陰謀、死亡魔影
+			(new Regex(@"add a copy to your hand, deck, and battlefield", O), TargetKind.AnyMinion, "copy"), // 破碎倒影
+			(new Regex(@"add a copy of it to your hand", O), TargetKind.AnyMinion, "copyHand"),           // 降靈術
+			(new Regex(@"summon a copy of a minion", O), TargetKind.AnyMinion, "copy"),                   // 迴音殘響
+			(new Regex(@"spread its deathrattle", O), TargetKind.FriendlyMinion, ""),                     // 死亡咆哮
+			(new Regex(@"choose a minion\. deal (\d+) damage to all other minions", O), TargetKind.FriendlyMinion, "aoeOthers"), // 滲透：保護自己最強的
+			(new Regex(@"choose a minion\. when it dies, deal", O), TargetKind.FriendlyMinion, ""),      // 火山術
+			(new Regex(@"if it's an enemy, set its stats to 1/1", O), TargetKind.EnemyMinion, "set11"),   // 厄索爾印記
+			(new Regex(@"choose a different minion to transform it into", O), TargetKind.EnemyMinion, "twoTargets"), // 供奉之舞：要選兩次，AI 不自動用
+			(new Regex(@"discover one that costs \(1\) more to transform it into", O), TargetKind.FriendlyMinion, ""), // 熾炎轉化
+			(new Regex(@"deathrattle: destroy the chosen minion", O), TargetKind.EnemyMinion, ""),        // 巫毒人偶
+			(new Regex(@"get a copy of another (elemental|dragon)", O), TargetKind.None, "gen"),          // 雲蛟：拿手牌的複製，不用選場上目標
+		};
+
+		private static void Overrides(Ent e)
+		{
+			if(e.Target != TargetKind.Unknown)
+				return; // 只處理一般規則判斷不了的牌，不影響其他牌
+			var t = e.Text ?? "";
+			foreach(var (re, target, special) in Rules)
+			{
+				var m = re.Match(t);
+				if(!m.Success) continue;
+				e.Target = target;
+				e.Special = special;
+				if(special == "gen") { e.Gen = 1; e.Special = ""; }
+				if(special == "aoeOthers") { e.AoE = false; e.Damage = int.Parse(m.Groups[1].Value); }
+				return;
+			}
 		}
 
 		private static void ClassifyTarget(Ent e, bool isHeroPower)

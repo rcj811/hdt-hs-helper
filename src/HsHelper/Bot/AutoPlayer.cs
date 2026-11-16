@@ -898,6 +898,7 @@ namespace HsHelper.Bot
 				&& (c.Kind != Kind.Spell || c.Target == TargetKind.None
 				    || (c.Target == TargetKind.EnemyMinion ? s.OppBoard.Any(m => m.Kind == Kind.Minion && !m.Stealth)
 					    : c.Target == TargetKind.FriendlyMinion ? s.MyBoard.Any(m => m.Kind == Kind.Minion)
+					    : c.Target == TargetKind.AnyMinion ? s.MyBoard.Concat(s.OppBoard).Any(m => m.Kind == Kind.Minion) && c.Special != "twoTargets"
 					    : c.Target != TargetKind.Unknown)));
 			if(playable)
 				return false;

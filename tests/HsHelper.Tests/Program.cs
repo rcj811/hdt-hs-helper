@@ -521,6 +521,8 @@ namespace HsHelper.Tests
 				Check("全體增益：+1/+1", bl.BuffAllA == 1 && bl.BuffAllH == 1);
 				Check("選一個手下＋之後消滅 → 對敵", Spell(1, "Choose a minion. Destroy it after your hero takes damage.", "縱火指控").Target == TargetKind.EnemyMinion);
 				Check("選一個手下＋每當它攻擊 → 對友", Spell(1, "Choose a minion. Whenever it attacks, draw a card.", "智慧祝福").Target == TargetKind.FriendlyMinion);
+				var leeroy = Spell(5, "<b>Charge</b>. <b>Battlecry:</b> Summon two 1/1 Whelps for your opponent.", "火車王");
+				Check("火車王幫對手召喚的不算我方", leeroy.SumN == 0);
 				Check("對手抽牌不算我抽", Spell(1, "Your opponent draws 2 cards.", "x").Draw == 0);
 
 				var s = Board(4, new Ent[0], new[] { Minion(2, 2), Minion(1, 2), Minion(2, 1) }, new[] { cs }, oppHp: 2);
@@ -532,6 +534,29 @@ namespace HsHelper.Tests
 				var s3 = Board(2, new[] { Minion(2, 2), Minion(2, 2), Minion(2, 2) }, new Ent[0], new[] { hs, bl }, oppHp: 7);
 				Decide(s3, out var p3);
 				Check("全體 +1/+1 後三隻 3 攻 + 英勇打擊 → 算出斬殺路線", p3.Contains("全體增益") || p3.Contains("英勇打擊"), p3);
+			}
+			// 16h. 手寫規則：一般規則判斷不了的特殊牌（全卡掃描剩下的 20 種）
+			{
+				var fm = Spell(5, "<b>Battlecry:</b> Choose a minion and become a copy of it.", "無面操縱者");
+				Check("無面操縱者 → 任一手下（複製）", fm.Target == TargetKind.AnyMinion && fm.Special == "copy");
+				var big = Minion(8, 8, "敵8/8"); var mine = Minion(2, 2);
+				var snap = Board(5, new[] { mine }, new[] { big }, new[] { fm });
+				Check("無面操縱者挑場上最有價值的（敵方 8/8）", Planner.PickAnyTarget(snap, fm, fm.Target)?.Id == big.Id);
+				var tt = Spell(0, "Swap a minion's Attack and Health.", "顛顛倒倒");
+				Check("顛顛倒倒 → 交換攻血", tt.Target == TargetKind.AnyMinion && tt.Special == "swap");
+				var glass = Minion(7, 1, "敵7/1"); var wall = Minion(0, 6, "我0/6");
+				var s2 = Board(0, new[] { wall }, new[] { glass }, new[] { tt });
+				var pick = Planner.PickTarget(s2, tt, TargetKind.AnyMinion);
+				Check("交換攻血：敵方 7/1 → 1/7 比較划算（攻擊 -6）", pick?.Id == glass.Id, pick?.Name);
+				Check("厄索爾印記 → 敵方變 1/1", Spell(1, "Choose a minion. If it's an enemy, set its stats to 1/1. If it's friendly, set its stats to 3/3 instead.", "厄索爾印記").Special == "set11");
+				var inf = Spell(4, "Choose a minion. Deal $3 damage to all other minions.", "滲透");
+				Check("滲透 → 保護自己的手下、其他全場 3 傷", inf.Target == TargetKind.FriendlyMinion && inf.Special == "aoeOthers" && inf.Damage == 3);
+				var s3 = Board(4, new[] { Minion(5, 6, "我5/6") }, new[] { Minion(3, 3), Minion(2, 3), Minion(3, 2) }, new[] { inf });
+				var act = Decide(s3, out var p3);
+				Check("滲透：保護 5/6、清掉敵方三隻", act?.Source?.Id == inf.Id && p3.Contains("我5/6"), p3);
+				var td = Spell(1, "Choose a minion. Choose a different minion to transform it into.", "供奉之舞");
+				Check("供奉之舞 → 要選兩次，不自動用", td.Special == "twoTargets");
+				Check("雲蛟 → 不用選場上目標、拿 1 張牌", Spell(3, "<b>Battlecry:</b> Get a copy of another Elemental or Dragon in your hand.", "雲蛟").Target == TargetKind.None);
 			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{

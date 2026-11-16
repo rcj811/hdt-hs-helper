@@ -353,7 +353,7 @@ namespace HsHelper.Bot
 
 			// 法術
 			var text = c.Text ?? "";
-			if(c.Target == TargetKind.Unknown)
+			if(c.Target == TargetKind.Unknown || c.Special == "twoTargets")
 				yield break;
 			if(c.Target == TargetKind.None)
 			{
@@ -444,6 +444,10 @@ namespace HsHelper.Bot
 					yield return st.Me.Id;
 					foreach(var m in st.My) yield return m.Id;
 					break;
+				case TargetKind.AnyMinion:
+					foreach(var m in st.Op.Where(m => !m.Stealth && !m.Untargetable)) yield return m.Id;
+					foreach(var m in st.My) yield return m.Id;
+					break;
 			}
 		}
 
@@ -453,6 +457,37 @@ namespace HsHelper.Bot
 			var lower = text.ToLowerInvariant();
 			var om = n.Op.FirstOrDefault(m => m.Id == tid);
 			var mm = n.My.FirstOrDefault(m => m.Id == tid);
+			if(!string.IsNullOrEmpty(c.Special))
+			{
+				// 手寫規則的特殊牌（v0.9.5）
+				var t = om ?? mm;
+				switch(c.Special)
+				{
+					case "swap":
+						if(t != null) { var a = t.Atk; t.Atk = t.Hp; t.Hp = a; }
+						break;
+					case "set11":
+						if(om != null) { om.Atk = 1; om.Hp = 1; }
+						break;
+					case "copy":
+						if(t != null && n.My.Count < 7)
+							n.My.Add(new M { Id = n.NextTokenId--, Atk = t.Atk, Hp = t.Hp, Taunt = t.Taunt, DS = t.DS, Poison = t.Poison, Lifesteal = t.Lifesteal, Windfury = t.Windfury });
+						break;
+					case "copyHand":
+						if(n.Hand.Count < 10) n.Hand.Add(new Ent { Id = -50000 - n.Hand.Count, Name = "複製的牌", Cost = 99, Kind = Kind.Other });
+						if(t != null) n.Bonus += (t.Atk + t.Hp) * 0.5;
+						break;
+					case "copyDeck":
+						if(t != null) n.Bonus += (t.Atk + t.Hp) * 0.4; // 洗進牌庫：之後才拿得到
+						break;
+					case "aoeOthers":
+						foreach(var m in n.Op.Concat(n.My).Where(m => m.Id != tid).ToList()) Hit(m, c.Damage);
+						break;
+				}
+				n.Bonus += c.Cost * 0.5;
+				RemoveDead(n);
+				return;
+			}
 			if(c.LearnedTarget)
 			{
 				// 敘述看不懂、但實戰觀察過：照觀察到的效果套用在目標上

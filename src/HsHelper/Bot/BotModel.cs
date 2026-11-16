@@ -13,7 +13,8 @@ namespace HsHelper.Bot
 		EnemyMinion,    // 消滅／變形／沉默／冰凍類：敵方手下
 		FriendlyMinion, // 增益類：友方手下
 		FriendlyAny,    // 治療類：友方角色
-		Unknown         // 需要目標但看不懂，跳過
+		Unknown,        // 需要目標但看不懂，跳過
+		AnyMinion       // 雙方任一手下（複製、交換攻血等特殊牌，v0.9.5 手寫規則）
 	}
 
 	/// <summary>一個實體（卡牌／手下／英雄）的快照，附帶它在螢幕上的座標。</summary>
@@ -47,6 +48,7 @@ namespace HsHelper.Bot
 		public int BuffAllA, BuffAllH;// 我方所有手下 +A/+H
 		public int FaceDmg;           // 直接打對手英雄（不用選目標）
 		public int Heal;              // 恢復幾點
+		public string Special = ""; // 特殊效果（手寫規則）：copy / copyHand / copyDeck / swap / set11 / aoeOthers / twoTargets
 		public int Gen;               // 發現／拿到幾張牌（加入手牌）
 		public int HeroAtk;           // 英雄本回合 +攻擊
 		public double Learned = double.NaN; // 實戰觀察到的效果價值（沒觀察過為 NaN）
