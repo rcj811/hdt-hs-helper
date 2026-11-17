@@ -348,10 +348,20 @@ namespace HsHelper.Bot
 		// ───────── 手牌／牌庫能力（v0.9.5）─────────
 		public string CardsText { get; private set; } = "";
 		private string _handSig = "";
+		private int _loggedTurn = -1;
 
 		/// <summary>每抽一張、打出一張（手牌或牌庫變了）就重新統計能力，寫進 log 並顯示在面板。</summary>
 		private void TrackCards(Snapshot s)
 		{
+			if(s.Turn != _loggedTurn)
+			{
+				// 每回合開始記一行局面（輸了的時候可以從報告看出血量怎麼掉的）
+				_loggedTurn = s.Turn;
+				int L(Ent h) => h == null ? 0 : h.Hp + h.Armor;
+				Log.Info($"Turn: 第 {s.Turn} 回合｜我 {L(s.MyHero)} 血（護甲 {s.MyHero?.Armor ?? 0}）vs 對手{s.OppClass} {L(s.OppHero)} 血｜水晶 {s.Mana}｜手牌 {s.Hand.Count}｜牌庫 {s.Deck.Count}" +
+				         $"｜我方場上 {string.Join(" ", s.MyBoard.Where(m => m.Kind == Kind.Minion).Select(m => $"{m.Atk}/{m.Hp}"))}｜敵方場上 {string.Join(" ", s.OppBoard.Where(m => m.Kind == Kind.Minion).Select(m => $"{m.Atk}/{m.Hp}"))}" +
+				         $"｜{StyleText}");
+			}
 			var sig = string.Join(",", s.Hand.Select(h => h.Id)) + "|" + s.Deck.Count;
 			if(sig == _handSig)
 				return;
@@ -702,6 +712,7 @@ namespace HsHelper.Bot
 			Input_Neutral = s.Neutral;
 			if(!PickFromHand(s, c))
 			{
+				Log.Info($"Hand pick failed (will retry): {c.Name}, hand {s.Hand.Count}");
 				if(RetryLater(c))
 					return;
 				_skip.Add(c.Id);

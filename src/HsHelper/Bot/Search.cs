@@ -317,6 +317,7 @@ namespace HsHelper.Bot
 						Id = c.Id, Atk = c.Atk, Hp = c.Hp, Taunt = c.Taunt, DS = c.DivineShield, Poison = c.Poisonous,
 						Lifesteal = c.Lifesteal, Stealth = c.Stealth, Windfury = c.Windfury
 					};
+					if(c.HpPerHand > 0) m.Hp += c.HpPerHand * n.Hand.Count; // 暮光飛龍：手牌越多越肥（所以先下它、再出別的牌）
 					ApplyExtras(n, c); // 戰吼：召喚、抽牌、護甲、全體增益、打臉（先套用，新下的手下不吃全體增益）
 					if(n.My.Count >= 7) n.My.RemoveAt(n.My.Count - 1); // 召喚佔滿時保留本體的位置
 					if(c.Charge) m.AttacksLeft = c.MaxAttacks;

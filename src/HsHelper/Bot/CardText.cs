@@ -107,6 +107,8 @@ namespace HsHelper.Bot
 			if(m.Success) e.FaceDmg = int.Parse(m.Groups[1].Value);
 			m = HealRe.Match(t);
 			if(m.Success) e.Heal = int.Parse(m.Groups[1].Value);
+			m = Regex.Match(t, @"gain \+(\d+) health for each card in your hand", RegexOptions.IgnoreCase);
+			if(m.Success) e.HpPerHand = int.Parse(m.Groups[1].Value);
 			if(DiscoverRe.IsMatch(t)) e.Gen = 1;
 			else if((m = AddHandRe.Match(t)).Success && !t.ToLowerInvariant().Contains("opponent's hand")) e.Gen = N(m.Groups[2].Value);
 			m = HeroAtkRe.Match(t);

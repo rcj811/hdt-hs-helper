@@ -558,6 +558,15 @@ namespace HsHelper.Tests
 				Check("供奉之舞 → 要選兩次，不自動用", td.Special == "twoTargets");
 				Check("雲蛟 → 不用選場上目標、拿 1 張牌", Spell(3, "<b>Battlecry:</b> Get a copy of another Elemental or Dragon in your hand.", "雲蛟").Target == TargetKind.None);
 			}
+			// 16i. 實戰（v0.9.5 對法師）：暮光飛龍手牌越多越肥 → 先下飛龍再出其他牌
+			{
+				var td = Card(4, 4, 1, "暮光飛龍"); td.Text = "<b>Battlecry:</b> Gain +1 Health for each card in your hand."; CardText.Classify(td);
+				Check("暮光飛龍：讀出每張手牌 +1 血", td.HpPerHand == 1 && td.Target == TargetKind.None);
+				var a = Card(2, 2, 3, "2費2/3"); var b = Card(2, 3, 2, "2費3/2");
+				var s = Board(8, new Ent[0], new Ent[0], new[] { td, a, b, Card(9, 9, 9, "9費"), Card(9, 9, 9, "9費b") });
+				var act = Decide(s, out var plan);
+				Check("暮光飛龍先下（手牌多時血最多）", act?.Source?.Id == td.Id, plan);
+			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{
 				var silence = Spell(1, "<b>Silence</b> a minion.", "沉默術");

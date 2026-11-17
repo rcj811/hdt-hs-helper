@@ -142,7 +142,7 @@ namespace HsHelper.Bot
 			"excavate", "titan", "colossal", "quickdraw", "dredge", "finale", "elusive", "immune", "counter", "recruit",
 			"lackey", "invoke", "sidequest", "questline", "quest", "start of game", "corpse", "corpses", "miniaturize",
 			"gigantify", "tourist", "starship", "imbue", "kindred", "herald", "assemble", "dark gift", "outcast",
-			"armor", "attack", "health", "legendary", "hero power", "prepare", "passive", "battlecry", "deathrattle", "spellburst", "combo", "objective", "location", "silenced"
+			"armor", "attack", "health", "legendary", "hero power", "prepare", "passive", "battlecry", "deathrattle", "spellburst", "combo", "objective", "location", "silenced", "infused"
 		};
 
 		private static Known Load()
@@ -530,7 +530,7 @@ namespace HsHelper.Bot
 				using(var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
 				using(var sr = new StreamReader(fs))
 					lines = sr.ReadToEnd().Split('\n');
-				var keys = new[] { "HsHelper", "Action:", "Plan:", "Notice:", "Choice:", "Assemble", "Deck:", "Learning", "failed", "Play failed", "Exception" };
+				var keys = new[] { "HsHelper", "Action:", "Plan:", "Notice:", "Choice:", "Assemble", "Deck:", "Learning", "failed", "Play failed", "bounced", "Turn:", "Cards:", "Lesson:", "Exception" };
 				return string.Join("\n", lines.Where(l => keys.Any(l.Contains)).Reverse().Take(400).Reverse());
 			}
 			catch(Exception ex)
