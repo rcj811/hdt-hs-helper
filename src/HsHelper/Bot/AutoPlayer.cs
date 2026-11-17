@@ -837,9 +837,21 @@ namespace HsHelper.Bot
 				return false;
 			Point At(int size, int i) => s.HandLayouts[Math.Max(1, Math.Min(10, size))][Math.Max(0, Math.Min(size - 1, i))];
 
+			// v0.9.7：放大卡的記憶體要一點時間才更新（剛出完牌時常讀到上一張）→ 輪詢到讀到「手上的牌」為止
+			LiveState.BigCard Fresh()
+			{
+				LiveState.BigCard b = null;
+				for(var t = 0; t < 8; t++)
+				{
+					Thread.Sleep(t == 0 ? 260 : 100);
+					b = LiveState.ReadBigCard();
+					if(b == null || (b.IsHand && s.Hand.Any(h => h.CardId == b.CardId)))
+						return b;
+				}
+				return b;
+			}
 			Input.MoveSlow(At(n, idx));
-			Thread.Sleep(260);
-			var big = LiveState.ReadBigCard();
+			var big = Fresh();
 			if(big == null)
 				return true; // 讀不到即時資料：照舊直接拖
 
@@ -867,8 +879,7 @@ namespace HsHelper.Bot
 					return false;
 				tried.Add(next);
 				Input.MoveSlow(At(liveN, next));
-				Thread.Sleep(260);
-				big = LiveState.ReadBigCard();
+				big = Fresh();
 				if(big == null)
 					return false;
 			}

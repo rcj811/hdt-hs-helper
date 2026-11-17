@@ -107,6 +107,10 @@ namespace HsHelper.Bot
 			if(m.Success) e.FaceDmg = int.Parse(m.Groups[1].Value);
 			m = HealRe.Match(t);
 			if(m.Success) e.Heal = int.Parse(m.Groups[1].Value);
+			m = Regex.Match(t, @"deal (\d+) damage to your hero", RegexOptions.IgnoreCase);
+			if(m.Success) e.SelfDmg = int.Parse(m.Groups[1].Value);
+			m = Regex.Match(t, @"deal (\d+) damage randomly split among (all )?enem", RegexOptions.IgnoreCase);
+			if(m.Success) { e.SplitDmg = int.Parse(m.Groups[1].Value); e.AoE = false; e.Damage = 0; e.Target = TargetKind.None; }
 			m = Regex.Match(t, @"gain \+(\d+) health for each card in your hand", RegexOptions.IgnoreCase);
 			if(m.Success) e.HpPerHand = int.Parse(m.Groups[1].Value);
 			if(DiscoverRe.IsMatch(t)) e.Gen = 1;
@@ -145,6 +149,8 @@ namespace HsHelper.Bot
 			if(e.AoE) t.Add(e.Damage > 0 ? $"全場{e.Damage}傷" : "全場消滅");
 			else if(e.Damage > 0 && e.Target != TargetKind.None) t.Add($"{e.Damage}傷害");
 			if(e.FaceDmg > 0) t.Add($"打臉{e.FaceDmg}");
+			if(e.SplitDmg > 0) t.Add($"隨機分{e.SplitDmg}傷");
+			if(e.SelfDmg > 0) t.Add($"自傷{e.SelfDmg}");
 			var low = (PlayScope(e) ?? "").ToLowerInvariant();
 			if(!e.AoE && e.Damage == 0 && (e.Target == TargetKind.EnemyMinion || e.Target == TargetKind.EnemyAny))
 				t.Add(low.Contains("destroy") ? "消滅" : low.Contains("transform") ? "變形" : low.Contains("silence") ? "沉默"

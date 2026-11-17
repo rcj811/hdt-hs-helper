@@ -567,6 +567,21 @@ namespace HsHelper.Tests
 				var act = Decide(s, out var plan);
 				Check("暮光飛龍先下（手牌多時血最多）", act?.Source?.Id == td.Id, plan);
 			}
+			// 16j. 實戰（v0.9.6 輸給獵人）：自傷累積——地獄烈焰×2、生命分流×2、烈焰小鬼，共扣自己 13 血
+			{
+				var imp = Card(1, 3, 2, "烈焰小鬼"); imp.Text = "<b>Battlecry:</b> Deal 3 damage to your hero."; CardText.Classify(imp);
+				Check("烈焰小鬼：讀出扣自己 3 血", imp.SelfDmg == 3 && imp.Target == TargetKind.None);
+				var app = Card(3, 2, 1, "狗頭人學徒"); app.Text = "<b>Battlecry:</b> Deal 3 damage randomly split among all enemies."; CardText.Classify(app);
+				Check("狗頭人學徒：隨機分 3 傷，不是全場 3 傷", app.SplitDmg == 3 && !app.AoE);
+				var foes = new[] { Minion(3, 2), Minion(3, 4), Minion(9, 1), Minion(1, 1) };
+				var s = Board(1, new Ent[0], foes, new[] { imp });
+				s.MyHero.Hp = 17;
+				Decide(s, out var p1);
+				Check("敵方場上 16 攻、自己 17 血：不下烈焰小鬼扣自己 3 血", !p1.Contains("烈焰小鬼"), string.IsNullOrEmpty(p1) ? "（結束回合）" : p1);
+				var s2 = Board(1, new Ent[0], new Ent[0], new[] { imp });
+				Decide(s2, out var p2);
+				Check("對方空場、自己 30 血：照常下烈焰小鬼", p2.Contains("烈焰小鬼"), p2);
+			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{
 				var silence = Spell(1, "<b>Silence</b> a minion.", "沉默術");

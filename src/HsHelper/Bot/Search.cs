@@ -26,6 +26,7 @@ namespace HsHelper.Bot
 		public double EnemyTurnBlend = 0.457;  // 反擊後評分所佔比重
 		public int RerankTop = 30;           // 只對前 N 個候選局面做反擊模擬
 		public double Overextend = 0;        // 學習：對手常用 AOE 時，場上超過 3 隻手下每隻扣分
+		public double DangerLine = 1.0, DangerPenalty = 1.5;      // 危險線＝敵方場面攻擊＋爆發 × 這個倍率（v0.9.7）
 		public double EnemyBurst = 2;        // 學習：對手手牌／技能的預估額外傷害
 		public int EnemyAoeDmg = 0;          // 職業模組：對手下回合可能的清場傷害（v0.9.5）
 		public double EnemyAoeChance = 0;    // 職業模組：對手有清場牌的機率
@@ -423,6 +424,20 @@ namespace HsHelper.Bot
 				any = true;
 			}
 			if(c.GainArmor > 0) { n.Me.Armor += c.GainArmor; any = true; }
+			if(c.SelfDmg > 0) { DamageHero(n.Me, c.SelfDmg); any = true; } // v0.9.7 實戰：烈焰小鬼原本沒算扣自己 3 血
+			if(c.SplitDmg > 0)
+			{
+				// 隨機分配：平均分給敵方角色（手下＋英雄），1 點 1 點輪流打
+				var targets = n.Op.Where(m => !m.Stealth).Select(m => m.Id).Concat(new[] { n.Opp.Id }).ToList();
+				for(var i = 0; i < c.SplitDmg; i++)
+				{
+					var id = targets[i % targets.Count];
+					var m = n.Op.FirstOrDefault(x => x.Id == id);
+					if(m != null) Hit(m, 1); else DamageHero(n.Opp, 1);
+				}
+				RemoveDead(n);
+				any = true;
+			}
 			if(c.FaceDmg > 0 && c.Target == TargetKind.None) { DamageHero(n.Opp, c.FaceDmg); any = true; }
 			return any;
 		}
@@ -743,7 +758,17 @@ namespace HsHelper.Bot
 
 			// 我方英雄：低於警戒線開始平方重罰
 			var myLife = st.Me.Hp + st.Me.Armor;
+			// v0.9.7 實戰（輸給獵人）：危險線跟著敵方場面＋爆發走——敵方場上 16 攻時 19 血並不安全，
+			// 這時再用生命分流、烈焰小鬼、地獄烈焰扣自己的血要付出代價
+			var line = w.LowHpLine;
+			if(!afterEnemyTurn)
+			{
+				var danger = st.Op.Where(m => !m.Frozen).Sum(m => m.Atk * (m.Windfury ? 2 : 1)) - st.My.Where(m => m.Taunt).Sum(m => m.Hp) * 0.5 + w.EnemyBurst;
+				line = Math.Max(line, danger * w.DangerLine);
+			}
 			v += myLife > w.LowHpLine ? myLife * w.HeroHp : -w.LowHpPenalty * Math.Pow(w.LowHpLine + 1 - myLife, 2);
+			if(line > w.LowHpLine && myLife < line)
+				v -= w.DangerPenalty * Math.Pow(line - Math.Max(myLife, w.LowHpLine), 2) / Math.Max(1, line); // 危險線以下每少 1 血代價遞增
 
 			// 敵方英雄：低於警戒線越低越加分（壓血）；進攻模式加重
 			var oppLife = st.Opp.Hp + st.Opp.Armor;

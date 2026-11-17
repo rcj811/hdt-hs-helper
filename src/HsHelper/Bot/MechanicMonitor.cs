@@ -142,7 +142,7 @@ namespace HsHelper.Bot
 			"excavate", "titan", "colossal", "quickdraw", "dredge", "finale", "elusive", "immune", "counter", "recruit",
 			"lackey", "invoke", "sidequest", "questline", "quest", "start of game", "corpse", "corpses", "miniaturize",
 			"gigantify", "tourist", "starship", "imbue", "kindred", "herald", "assemble", "dark gift", "outcast",
-			"armor", "attack", "health", "legendary", "hero power", "prepare", "passive", "battlecry", "deathrattle", "spellburst", "combo", "objective", "location", "silenced", "infused"
+			"armor", "attack", "health", "legendary", "hero power", "prepare", "passive", "battlecry", "deathrattle", "spellburst", "combo", "objective", "location", "silenced", "infused", "bonus effect"
 		};
 
 		private static Known Load()

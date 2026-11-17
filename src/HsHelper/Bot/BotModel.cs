@@ -49,6 +49,8 @@ namespace HsHelper.Bot
 		public int FaceDmg;           // 直接打對手英雄（不用選目標）
 		public int Heal;              // 恢復幾點
 		public string Special = ""; // 特殊效果（手寫規則）：copy / copyHand / copyDeck / swap / set11 / aoeOthers / twoTargets
+		public int SelfDmg;           // 打到自己英雄（烈焰小鬼 3、深淵領主 5、狗頭人圖書管理員 2）
+		public int SplitDmg;          // 隨機分給敵方角色的傷害（狗頭人學徒、秘法飛彈）
 		public int HpPerHand;         // 暮光飛龍：手上每張牌 +N 血
 		public int Gen;               // 發現／拿到幾張牌（加入手牌）
 		public int HeroAtk;           // 英雄本回合 +攻擊
