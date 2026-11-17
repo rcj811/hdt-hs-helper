@@ -266,6 +266,10 @@ namespace HsHelper.Bot
 				n.Mana -= c.Cost;
 				n.ManaSpent += c.Cost;
 				n.Moves.Add(new Move { Type = ActionType.Play, Source = c.Id, Target = target });
+				// v0.9.8：0 費牌不花水晶，只要效果不傷自己就該用——補回「少一張手牌」的扣分
+				// （例：0 費 +1/+1 增益只值約 4 分 < 手牌 5.6 分，原本會一直留著）
+				if(c.Cost == 0 && !c.IsCoin && c.ManaGain == 0 && c.Discard == 0 && c.SelfDmg == 0)
+					n.Bonus += W.HandCard * 0.6;
 				if(c.Discard > 0 && n.Hand.Count > 0)
 				{
 					// 棄牌（v0.9.3 實戰：連下兩張末日守衛棄掉 4 張，後期沒牌輸掉）

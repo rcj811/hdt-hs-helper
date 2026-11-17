@@ -582,6 +582,20 @@ namespace HsHelper.Tests
 				Decide(s2, out var p2);
 				Check("對方空場、自己 30 血：照常下烈焰小鬼", p2.Contains("烈焰小鬼"), p2);
 			}
+			// 16k. 0 費牌要用：0 費增益、0 費傷害（有合法目標時）
+			{
+				var buff = Spell(0, "Give a minion +1/+1.", "0費香蕉");
+				var s = Board(0, new[] { Minion(3, 3, "我3/3") }, new Ent[0], new[] { buff });
+				Decide(s, out var p1);
+				Check("0 費 +1/+1：有友方手下就用", p1.Contains("0費香蕉"), string.IsNullOrEmpty(p1) ? "（結束回合）" : p1);
+				var ping = Spell(0, "Deal $1 damage.", "0費1傷");
+				var s2 = Board(0, new Ent[0], new[] { Minion(2, 1, "敵2/1") }, new[] { ping });
+				Decide(s2, out var p2);
+				Check("0 費 1 傷：打死敵方 1 血手下", p2.Contains("0費1傷"), p2);
+				var s3 = Board(0, new Ent[0], new Ent[0], new[] { Spell(0, "Give a minion +1/+1.", "0費香蕉") });
+				Decide(s3, out var p3);
+				Check("沒有手下可以增益：不會亂用（也不會卡住）", !p3.Contains("0費香蕉"), string.IsNullOrEmpty(p3) ? "（結束回合）" : p3);
+			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{
 				var silence = Spell(1, "<b>Silence</b> a minion.", "沉默術");
