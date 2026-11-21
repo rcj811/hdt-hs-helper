@@ -41,6 +41,7 @@ namespace HsHelper.Bot
 			var deck = game.CurrentSelectedDeck;
 			if(deck != null) { s.DeckId = deck.Id; s.DeckName = deck.Name ?? ""; }
 			s.Deck = ReadDeck(game.Player);
+			try { s.DeckCount = game.Player.DeckCount; s.Fatigue = me.GetTag(GameTag.FATIGUE); } catch(Exception) { }
 			try { s.OppMana = game.OpponentEntity?.GetTag(GameTag.RESOURCES) ?? 0; } catch(Exception) { }
 			var ps = me.GetTag(GameTag.PLAYSTATE);
 			s.Won = ps == (int)PlayState.WON;

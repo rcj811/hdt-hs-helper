@@ -18,5 +18,6 @@
     <Compile Include="..\..\src\HsHelper\Bot\CardLessons.cs" Link="Bot\CardLessons.cs" />
     <Compile Include="..\..\src\HsHelper\Bot\CardSummary.cs" Link="Bot\CardSummary.cs" />
     <Compile Include="..\..\src\HsHelper\Bot\ClassThreat.cs" Link="Bot\ClassThreat.cs" />
+    <Compile Include="..\..\src\HsHelper\UpdateCheck.cs" Link="UpdateCheck.cs" />
   </ItemGroup>
 </Project>

@@ -596,6 +596,29 @@ namespace HsHelper.Tests
 				Decide(s3, out var p3);
 				Check("沒有手下可以增益：不會亂用（也不會卡住）", !p3.Contains("0費香蕉"), string.IsNullOrEmpty(p3) ? "（結束回合）" : p3);
 			}
+			// 16l. 實戰（v0.9.8 輸給牧師）：牌庫 0 張還連用兩次生命分流 → 疲勞扣血
+			{
+				Ent Tap() => HeroPower("<b>Hero Power</b> Draw a card and take $2 damage.");
+				var s = Board(2, new Ent[0], new Ent[0], new Ent[0], myHp: 15, heroPower: Tap());
+				s.DeckCount = 0; s.Fatigue = 1;
+				Decide(s, out var p1);
+				Check("牌庫 0 張：不用生命分流（只會扣血＋疲勞）", !p1.Contains("英雄技能"), string.IsNullOrEmpty(p1) ? "（結束回合）" : p1);
+				var s2 = Board(2, new Ent[0], new Ent[0], new Ent[0], myHp: 25, heroPower: Tap());
+				s2.DeckCount = 20;
+				Decide(s2, out var p2);
+				Check("牌庫 20 張、有空水晶：照常生命分流", p2.Contains("英雄技能"), p2);
+				var draw = Spell(3, "Draw 2 cards.", "抽2");
+				var s3 = Board(3, new Ent[0], new Ent[0], new[] { draw }, myHp: 10);
+				s3.DeckCount = 0; s3.Fatigue = 3;
+				Decide(s3, out var p3);
+				Check("牌庫 0 張：不打抽牌法術（疲勞 4+5 傷）", !p3.Contains("抽2"), string.IsNullOrEmpty(p3) ? "（結束回合）" : p3);
+			}
+			// 16m. 新版檢查
+			{
+				Check("新版檢查：v0.9.9 比 0.9.6 新", HsHelper.UpdateCheck.IsNewer("v0.9.9", new Version(0, 9, 6, 0)));
+				Check("新版檢查：同版不提示", !HsHelper.UpdateCheck.IsNewer("v0.9.9", new Version(0, 9, 9, 0)));
+				Check("新版檢查：v0.10.0 比 0.9.9 新", HsHelper.UpdateCheck.IsNewer("v0.10.0", new Version(0, 9, 9, 0)));
+			}
 			// 16b. 需要目標的法術：場上沒有合法目標就不出（實測報告：沒敵人還選了要目標的牌）
 			{
 				var silence = Spell(1, "<b>Silence</b> a minion.", "沉默術");

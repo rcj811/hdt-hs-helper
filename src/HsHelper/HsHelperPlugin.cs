@@ -92,6 +92,20 @@ namespace HsHelper
 					try { MechanicMonitor.CheckOnStartup(); } catch(Exception ex) { Log.Error(ex); }
 				});
 
+				// 新版檢查：GitHub 有新版就提示，選單也多一項「下載新版」
+				System.Threading.Tasks.Task.Delay(12000).ContinueWith(async _ =>
+				{
+					var tag = await UpdateCheck.NewerAsync(PluginVersion);
+					if(tag == null) return;
+					System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+					{
+						_toast?.Show($"⬆ 爐石輔助有新版 {tag}（目前 {VersionText}）\n選單「爐石輔助 → 下載新版」", Color.FromRgb(0x7C, 0xE0, 0x7C), true, 20, 8);
+						var upd = new MenuItem { Header = $"⬆ 下載新版 {tag}…" };
+						upd.Click += (s2, e2) => { try { System.Diagnostics.Process.Start(UpdateCheck.ReleasesPage); } catch(Exception ex) { Log.Error(ex); } };
+						_menuItem.Items.Insert(0, upd);
+					}));
+				});
+
 				Log.Info($"HsHelper {VersionText} loaded");
 				// 啟動提示：確認更新到的版本
 				System.Threading.Tasks.Task.Delay(4000).ContinueWith(_ => System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>

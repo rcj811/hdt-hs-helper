@@ -78,6 +78,8 @@ namespace HsHelper.Bot
 		public bool MainAction;
 		public int Turn;
 		public int Mana;
+		public int DeckCount = -1;    // 牌庫實際剩幾張（-1 = 不知道）；0 再抽牌會疲勞扣血
+		public int Fatigue;           // 已經受過的疲勞傷害（下次疲勞 = Fatigue + 1）
 		public int OppMana;           // 對手目前的水晶上限（職業模組用，v0.9.5）
 		public int ManaSpent;         // 本回合已用掉的水晶（重置水晶類的上限）
 		public string MyClass;

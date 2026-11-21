@@ -68,6 +68,7 @@ namespace HsHelper.Bot
 			public List<M> My = new List<M>(), Op = new List<M>();
 			public List<Ent> Hand = new List<Ent>();
 			public int Mana, ManaGained, ManaSpent;
+			public int DeckLeft = 99, Fatigue; // 牌庫剩幾張、已受疲勞（v0.9.9 實戰：牌庫空了還一直生命分流）
 			public bool HeroPowerUsable;
 			public Ent HeroPower;
 			public double Bonus;            // 看不懂效果的牌：用費用估值
@@ -171,6 +172,8 @@ namespace HsHelper.Bot
 				Opp = new H { Id = s.OppHero.Id, Hp = s.OppHero.Hp, Armor = s.OppHero.Armor, Immune = s.OppHero.Immune },
 				Mana = s.Mana,
 				ManaSpent = s.ManaSpent,
+				DeckLeft = s.DeckCount >= 0 ? s.DeckCount : 99,
+				Fatigue = s.Fatigue,
 				HeroPower = s.MyHeroPower,
 				HeroPowerUsable = s.MyHeroPower != null && !s.MyHeroPower.Exhausted && !skip.Contains(s.MyHeroPower.Id)
 			};
@@ -399,6 +402,23 @@ namespace HsHelper.Bot
 			}
 		}
 
+		/// <summary>抽牌：牌庫還有就進手牌（手牌滿了燒掉）；牌庫空了改成疲勞扣血（1、2、3…遞增）。</summary>
+		private static void DrawCards(S n, int count, string name = "抽到的牌")
+		{
+			for(var i = 0; i < count; i++)
+			{
+				if(n.DeckLeft <= 0)
+				{
+					n.Fatigue++;
+					DamageHero(n.Me, n.Fatigue);
+					continue;
+				}
+				n.DeckLeft--;
+				if(n.Hand.Count < 10)
+					n.Hand.Add(new Ent { Id = -50000 - n.Hand.Count, Name = name, Cost = 99, Kind = Kind.Other });
+			}
+		}
+
 		/// <summary>套用讀卡得到的結構化效果（召喚、抽牌、護甲、全體增益、打臉）。回傳有沒有認出任何效果。</summary>
 		private static bool ApplyExtras(S n, Ent c)
 		{
@@ -423,8 +443,9 @@ namespace HsHelper.Bot
 			if(c.Draw + c.Gen > 0)
 			{
 				// 抽到／發現的牌：放進手牌當作「這回合打不出來的牌」（評分會算手牌數）
-				for(var i = 0; i < c.Draw + c.Gen && n.Hand.Count < 10; i++)
-					n.Hand.Add(new Ent { Id = -50000 - n.Hand.Count, Name = "抽到的牌", Cost = 99, Kind = Kind.Other });
+				DrawCards(n, c.Draw);
+				for(var i = 0; i < c.Gen && n.Hand.Count < 10; i++) // 發現／拿牌不從牌庫抽，不會疲勞
+					n.Hand.Add(new Ent { Id = -50000 - n.Hand.Count, Name = "拿到的牌", Cost = 99, Kind = Kind.Other });
 				any = true;
 			}
 			if(c.GainArmor > 0) { n.Me.Armor += c.GainArmor; any = true; }
@@ -605,8 +626,19 @@ namespace HsHelper.Bot
 			}
 			else if(lower.Contains("draw"))
 			{
+				// 生命分流：扣 2 血抽 1 張。牌庫空了＝扣 2 血＋疲勞，沒有任何好處（v0.9.9 實戰：牌庫 0 張還連用兩次）
 				s2.Me.Hp -= 2;
-				s2.Bonus += 6;
+				if(s2.DeckLeft <= 0)
+				{
+					DrawCards(s2, 1);
+					s2.Bonus -= 4;
+				}
+				else
+				{
+					s2.DeckLeft--;
+					// 牌庫快見底時，多抽一張＝早一回合疲勞：價值遞減
+					s2.Bonus += s2.DeckLeft >= 5 ? 6 : 6 * (s2.DeckLeft + 1) / 6.0 - 1;
+				}
 			}
 			else
 				s2.Bonus += 4;
